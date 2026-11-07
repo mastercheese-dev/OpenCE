@@ -1191,9 +1191,10 @@ A Halo Custom Edition map (custom_maps\<name>) is looked for in the Custom
 Edition maps folders (port/linux/game/custom_edition_cache.c), and must be
 the host's version (`version`, cache_files_map_version's on the host); any
 other map in the game's own. One this machine lacks (or whose resource maps
-it lacks) is asked of the host instead, if it may be (map sharing:
-port/linux/game/map_share.c): it is taken as present, and downloaded before
-it is precached. */
+it lacks) is asked of the host (map sharing: port/linux/game/map_share.c).
+The host sends it when that host shares maps. It is taken as present, and
+downloaded before it is precached. The saved download switch is not asked:
+it is off in the settings file, and its screen is not in the menus. */
 boolean cache_files_map_present(
 	char const *map_name,
 	unsigned long version)
@@ -1208,11 +1209,13 @@ boolean cache_files_map_present(
 		return TRUE;
 	if (custom_edition_level_name(map_name))
 	{
-		if (custom_edition_cache_present(map_name, version, message, sizeof(message)) ||
-			map_share_download_begin(map_name, version, message))
-		{
+		if (custom_edition_cache_present(map_name, version, message, sizeof(message)))
 			return TRUE;
-		}
+		/* ask even when the saved download switch is off, so a shared map
+		starts coming down instead of the missing-map line */
+		map_share_download_permit();
+		if (map_share_download_begin(map_name, version, message))
+			return TRUE;
 	}
 	else
 	{
@@ -1325,6 +1328,9 @@ long scenario_tags_load(
 	name: a Custom Edition map that cannot load is not played at all. */
 	if (custom_edition_level_name(scenario_name))
 	{
+		/* port: a protected map's structure bsp names the groups of tags
+		whose own are scrambled (port/linux/game/tag_validate.c) */
+		custom_edition_structure_bsp_proc_set(tag_validate_custom_edition_note_structure_bsp);
 		/* (the folder on the name is which maps folder holds the file.
 		Without it, the lookup is custom_maps.) */
 		cache_file_globals.tag_header = custom_edition_cache_tags_load(

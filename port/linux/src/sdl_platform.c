@@ -37,13 +37,21 @@ extern unsigned char network_chat_typing(void);
 #if !defined(_WIN32) && !defined(HALO_ANDROID)
 #include <signal.h>
 #endif
+#ifdef _WIN32
+/* port/windows/src/win32_window.c, compiled with the Windows SDK */
+void win32_window_borderless_apply(SDL_Window *window);
+#endif
+#if defined(__linux__) && !defined(HALO_ARM64_GUEST) && !defined(HALO_ANDROID)
+#include <dlfcn.h>
+#include <unistd.h>
+#endif
 
 static SDL_Window *platform_window;
 static SDL_GLContext platform_gl_context;
 static SDL_ThreadID platform_event_thread;
 static BOOL platform_sdl_started = FALSE;
 
-static struct platform_input_state input_state;
+static struct platform_input_state input_state = { .focused = TRUE };
 /* keys pressed since the last read, so a press and release between two
 reads still counts as a press (input injected on Android, or a slow frame) */
 static unsigned char keys_pressed[SDL_SCANCODE_COUNT];
@@ -183,6 +191,35 @@ static void data_check_maps(void)
 }
 #endif
 
+#if defined(__linux__) && !defined(HALO_ARM64_GUEST) && !defined(HALO_ANDROID)
+/* NVIDIA's Wayland EGL library is missing on some 32-bit installs, and SDL
+then has no GL context. Prefer X11 when that library will not load, unless
+the driver was already chosen. */
+static void platform_choose_video_driver(void)
+{
+	void *library;
+
+	if (getenv("SDL_VIDEO_DRIVER") || !getenv("WAYLAND_DISPLAY"))
+		return;
+	if (access("/sys/module/nvidia", F_OK) != 0)
+		return;
+	library = dlopen("libnvidia-egl-wayland.so.1", RTLD_LAZY | RTLD_LOCAL);
+	if (library)
+	{
+		dlclose(library);
+		return;
+	}
+	library = dlopen("libnvidia-egl-wayland2.so.1", RTLD_LAZY | RTLD_LOCAL);
+	if (library)
+	{
+		dlclose(library);
+		return;
+	}
+	SDL_SetHint(SDL_HINT_VIDEO_DRIVER, "x11,wayland");
+	platform_log("video: NVIDIA on Wayland without its EGL library; using X11");
+}
+#endif
+
 BOOL platform_sdl_initialize(void)
 {
 	if (platform_sdl_started)
@@ -197,7 +234,7 @@ BOOL platform_sdl_initialize(void)
 	one already running, and goes */
 	if (p2p_hand_off_invite())
 		exit(EXIT_SUCCESS);
-	SDL_SetHint(SDL_HINT_APP_NAME, "CoreCE");
+	SDL_SetHint(SDL_HINT_APP_NAME, "OpenCE");
 	/* a notification or another app in front must not freeze the pad */
 	SDL_SetHint(SDL_HINT_JOYSTICK_ALLOW_BACKGROUND_EVENTS, "1");
 #ifdef _WIN32
@@ -213,6 +250,9 @@ BOOL platform_sdl_initialize(void)
 	/* touching the screen must not aim or fire (the mouse drives the
 	controller emulation in xinput_sdl.c) */
 	SDL_SetHint(SDL_HINT_TOUCH_MOUSE_EVENTS, "0");
+#endif
+#if defined(__linux__) && !defined(HALO_ARM64_GUEST) && !defined(HALO_ANDROID)
+	platform_choose_video_driver();
 #endif
 	if (!SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO | SDL_INIT_GAMEPAD | SDL_INIT_EVENTS))
 	{
@@ -298,7 +338,7 @@ static BOOL data_extract(const char *image, const char *destination, char *error
 	/* (waited for through extraction.finished; the Windows port's threads
 	cannot be joined) */
 	pthread_detach(thread);
-	window = SDL_CreateWindow("CoreCE", 640, 150, 0);
+	window = SDL_CreateWindow("OpenCE", 640, 150, 0);
 	if (window)
 	{
 		renderer = SDL_CreateRenderer(window, NULL);
@@ -360,7 +400,9 @@ static BOOL data_extract(const char *image, const char *destination, char *error
 struct data_image_choice
 {
 	SDL_AtomicInt done;
+	BOOL failed;
 	char path[1024];
+	char error[256];
 };
 
 static void SDLCALL data_image_chosen(void *userdata, const char * const *files, int filter)
@@ -368,13 +410,47 @@ static void SDLCALL data_image_chosen(void *userdata, const char * const *files,
 	struct data_image_choice *choice = userdata;
 
 	(void)filter;
-	if (files && files[0])
+	if (!files)
+	{
+		/* no dialog could be shown (SDL needs the desktop portal through
+		libdbus, or zenity) */
+		choice->failed = TRUE;
+		snprintf(choice->error, sizeof(choice->error), "%s",
+			*SDL_GetError() ? SDL_GetError() : "no desktop portal or zenity");
+	}
+	else if (files[0])
+	{
 		snprintf(choice->path, sizeof(choice->path), "%s", files[0]);
+	}
 	SDL_SetAtomicInt(&choice->done, 1);
 }
 
-/* the disc image the player picks; FALSE if they pick none */
-static BOOL data_choose_image(char *path, int size)
+/* a disc image in the folder the maps are extracted to (next to the
+executable), for systems where no file dialog can be shown */
+static BOOL data_find_image(const char *directory, char *path, int size)
+{
+	static const char *const patterns[] = { "*.iso", "*.xiso" };
+	int pattern;
+
+	for (pattern = 0; pattern < (int)(sizeof(patterns) / sizeof(patterns[0])); pattern++)
+	{
+		int count = 0;
+		char **files = SDL_GlobDirectory(directory, patterns[pattern], SDL_GLOB_CASEINSENSITIVE, &count);
+
+		if (files && count > 0)
+		{
+			snprintf(path, (size_t)size, "%s/%s", directory, files[0]);
+			SDL_free(files);
+			return TRUE;
+		}
+		SDL_free(files);
+	}
+	return FALSE;
+}
+
+/* the disc image the player picks; FALSE if they pick none, with *failed
+set (and error written) when no dialog could be shown */
+static BOOL data_choose_image(char *path, int size, BOOL *failed, char *error, int error_size)
 {
 	static const SDL_DialogFileFilter filters[] =
 	{
@@ -392,6 +468,9 @@ static BOOL data_choose_image(char *path, int size)
 		SDL_PumpEvents();
 		SDL_Delay(50);
 	}
+	*failed = choice.failed;
+	if (choice.failed)
+		snprintf(error, (size_t)error_size, "%s", choice.error);
 	if (!choice.path[0])
 		return FALSE;
 	snprintf(path, (size_t)size, "%s", choice.path);
@@ -436,7 +515,7 @@ static void platform_offer_loading_picture(void)
 	}
 	for (;;)
 	{
-		SDL_MessageBoxData question = { SDL_MESSAGEBOX_INFORMATION, NULL, "CoreCE", "", 2, buttons, NULL };
+		SDL_MessageBoxData question = { SDL_MESSAGEBOX_INFORMATION, NULL, "OpenCE", "", 2, buttons, NULL };
 		char message[1400];
 		char image[1024];
 		char error[512];
@@ -453,8 +532,17 @@ static void platform_offer_loading_picture(void)
 			platform_log("loading screen: %s was not extracted", file_path);
 			return;
 		}
-		if (!data_choose_image(image, sizeof(image)))
-			continue;
+		{
+			BOOL failed = FALSE;
+
+			if (!data_choose_image(image, sizeof(image), &failed, error, sizeof(error)))
+			{
+				if (!failed)
+					continue;
+				platform_log("no file dialog: %s", error);
+				return;
+			}
+		}
 		platform_log("extracting the loading screen picture from %s", image);
 		if (xiso_extract_loading_picture(image, maps_directory, error, sizeof(error)))
 		{
@@ -462,7 +550,7 @@ static void platform_offer_loading_picture(void)
 			return;
 		}
 		platform_log("loading screen extraction failed: %s", error);
-		SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "CoreCE", error[0] ? error : "The loading screen picture could not be read.", NULL);
+		SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "OpenCE", error[0] ? error : "The loading screen picture could not be read.", NULL);
 	}
 }
 #endif
@@ -474,7 +562,9 @@ BOOL platform_offer_game_data(const char *destination)
 		{ SDL_MESSAGEBOX_BUTTON_RETURNKEY_DEFAULT, 1, "Yes" },
 		{ SDL_MESSAGEBOX_BUTTON_ESCAPEKEY_DEFAULT, 0, "No" },
 	};
-	char message[1400];
+	char message[2600];
+	char found[1024];
+	BOOL image_found;
 
 	/* not for runs nobody is watching */
 	if (config_boolean("debug.hidden_window") || config_real("debug.exit_after") > 0.0 ||
@@ -482,27 +572,59 @@ BOOL platform_offer_game_data(const char *destination)
 	{
 		return FALSE;
 	}
-	snprintf(message, sizeof(message),
-		"CoreCE's game data (its maps folder) was not found.\n\n"
-		"Extract the maps folder from an Xbox disc image (.iso) of Halo: Combat Evolved? "
-		"It is copied to %s/maps (about 2 GB).\n\n"
-		"(Or put the maps folder there yourself, or set paths.data in config.toml.)",
-		destination);
+	image_found = data_find_image(destination, found, sizeof(found));
+	if (image_found)
+	{
+		snprintf(message, sizeof(message),
+			"OpenCE's game data (its maps folder) was not found.\n\n"
+			"Extract the maps folder from the Xbox disc image %s? "
+			"It is copied to %s/maps (about 2 GB).\n\n"
+			"(Or put the maps folder there yourself, or set paths.data in config.toml.)",
+			found, destination);
+	}
+	else
+	{
+		snprintf(message, sizeof(message),
+			"OpenCE's game data (its maps folder) was not found.\n\n"
+			"Extract the maps folder from an Xbox disc image (.iso) of Halo: Combat Evolved? "
+			"It is copied to %s/maps (about 2 GB).\n\n"
+			"(Or put the maps folder there yourself, or set paths.data in config.toml.)",
+			destination);
+	}
 	for (;;)
 	{
-		SDL_MessageBoxData question = { SDL_MESSAGEBOX_INFORMATION, NULL, "CoreCE", message, 2, buttons, NULL };
+		SDL_MessageBoxData question = { SDL_MESSAGEBOX_INFORMATION, NULL, "OpenCE", message, 2, buttons, NULL };
 		char image[1024];
 		char error[512];
 		int answer = 0;
+		BOOL failed = FALSE;
 
 		if (!SDL_ShowMessageBox(&question, &answer) || answer != 1)
 		{
 			platform_log("no game data: quitting");
 			exit(EXIT_SUCCESS);
 		}
-		/* no image picked: ask again */
-		if (!data_choose_image(image, sizeof(image)))
-			continue;
+		if (image_found)
+		{
+			snprintf(image, sizeof(image), "%s", found);
+		}
+		else if (!data_choose_image(image, sizeof(image), &failed, error, sizeof(error)))
+		{
+			char explanation[1400];
+
+			/* no image picked: ask again */
+			if (!failed)
+				continue;
+			/* no dialog could be shown */
+			platform_log("no file dialog: %s", error);
+			snprintf(explanation, sizeof(explanation),
+				"No file dialog could be shown (%s).\n\n"
+				"Put the disc image (.iso) in %s and start OpenCE again, "
+				"or install zenity.",
+				error, destination);
+			SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "OpenCE", explanation, NULL);
+			exit(EXIT_SUCCESS);
+		}
 		platform_log("extracting the maps folder from %s to %s", image, destination);
 		if (data_extract(image, destination, error, sizeof(error)))
 		{
@@ -510,7 +632,8 @@ BOOL platform_offer_game_data(const char *destination)
 			return TRUE;
 		}
 		platform_log("extraction failed: %s", error);
-		SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "CoreCE", error, NULL);
+		image_found = FALSE;
+		SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "OpenCE", error, NULL);
 	}
 }
 #endif
@@ -986,6 +1109,8 @@ SDL_AudioDeviceID platform_audio_device(int recording, const char *name)
 /* the window's size (platform_window_size_setting), as the window was made
 or last resized: platform_display_apply */
 static long platform_window_width = -1, platform_window_height = -1;
+/* the last configured mode; F11 can change the window independently */
+static int platform_window_mode = _display_mode_windowed;
 #endif
 
 BOOL platform_video_initialize(unsigned long width, unsigned long height)
@@ -1029,7 +1154,7 @@ BOOL platform_video_initialize(unsigned long width, unsigned long height)
 
 		if (scale < 1)
 			scale = 1;
-		platform_window = SDL_CreateWindow("CoreCE", (int)(width * scale), (int)(height * scale),
+		platform_window = SDL_CreateWindow("OpenCE", (int)(width * scale), (int)(height * scale),
 #if defined(HALO_MACOS_NATIVE_METAL)
 			SDL_WINDOW_METAL
 #else
@@ -1049,7 +1174,7 @@ BOOL platform_video_initialize(unsigned long width, unsigned long height)
 	(void)width;
 	(void)height;
 	platform_window_size_setting(&platform_window_width, &platform_window_height);
-	platform_window = SDL_CreateWindow("CoreCE", (int)platform_window_width, (int)platform_window_height,
+	platform_window = SDL_CreateWindow("OpenCE", (int)platform_window_width, (int)platform_window_height,
 		SDL_WINDOW_OPENGL | SDL_WINDOW_RESIZABLE | SDL_WINDOW_HIGH_PIXEL_DENSITY |
 		(config_boolean("debug.hidden_window") ? SDL_WINDOW_HIDDEN : 0) |
 		(platform_fullscreen_setting() ? SDL_WINDOW_FULLSCREEN : 0));
@@ -1071,7 +1196,11 @@ BOOL platform_video_initialize(unsigned long width, unsigned long height)
 		SDL_DestroySurface(icon);
 	}
 	platform_fullscreen_requested = platform_fullscreen_setting();
+	platform_window_mode = platform_display_mode();
 	platform_fullscreen_kind_apply();
+#ifdef _WIN32
+	win32_window_borderless_apply(platform_window);
+#endif
 #endif
 #if !defined(HALO_MACOS_NATIVE_METAL)
 	platform_gl_context = SDL_GL_CreateContext(platform_window);
@@ -1095,6 +1224,12 @@ BOOL platform_video_initialize(unsigned long width, unsigned long height)
 	version = SDL_GL_SetSwapInterval(config_boolean("display.vsync") ? 1 : 0);
 	(void)version;
 	platform_log("OpenGL %s on %s", (const char *)glGetString(GL_VERSION), (const char *)glGetString(GL_RENDERER));
+	{
+		const char *renderer = (const char *)glGetString(GL_RENDERER);
+
+		if (renderer && (strstr(renderer, "llvmpipe") || strstr(renderer, "softpipe")))
+			platform_log("OpenGL is drawn on the processor");
+	}
 #else
 	platform_log("native Metal");
 #endif
@@ -1118,14 +1253,18 @@ and borderless's resolution are taken up between frames
 void platform_display_apply(void)
 {
 #ifndef HALO_ANDROID
-	BOOL fullscreen = platform_fullscreen_setting();
+	int mode = platform_display_mode();
 	long width, height;
 
 	if (!platform_window)
 		return;
 	platform_fullscreen_kind_apply();
-	if (platform_window_fullscreen() != (fullscreen != FALSE))
-		platform_window_set_fullscreen(fullscreen);
+	/* Saving unrelated settings must preserve the window mode chosen by F11. */
+	if (mode != platform_window_mode)
+	{
+		platform_window_mode = mode;
+		platform_window_set_fullscreen(platform_fullscreen_setting());
+	}
 	platform_window_size_setting(&width, &height);
 	if (width != platform_window_width || height != platform_window_height)
 	{
@@ -1200,8 +1339,23 @@ void platform_video_swap(void)
 	Uint64 interval, now;
 
 #endif
+#ifdef _WIN32
+	/* SDL can restore its fullscreen styles on a mode or focus change.
+	Keep borderless on the desktop before the driver presents a frame. */
+	win32_window_borderless_apply(platform_window);
+#endif
 #if !defined(HALO_MACOS_NATIVE_METAL)
-	SDL_GL_SwapWindow(platform_window);
+	{
+		Uint64 swap_start = SDL_GetTicks();
+		Uint64 swap_time;
+
+		SDL_GL_SwapWindow(platform_window);
+		/* (a frame the graphics driver held for seconds: the game froze, and
+		online, a host stops hearing a machine after a few; the log says where) */
+		swap_time = SDL_GetTicks() - swap_start;
+		if (swap_time >= 2000)
+			platform_log("display: showing a frame took %.1f s in the graphics driver", (double)swap_time / 1000.0);
+	}
 #endif
 #ifndef HALO_ANDROID
 	interval = frame_interval_ns();
@@ -1218,18 +1372,66 @@ void platform_video_swap(void)
 #endif
 }
 
+#if !defined(HALO_ANDROID) && !defined(HALO_WEB) && !defined(HALO_MACOS)
+/* when SDL_SetWindowRelativeMouseMode has no XInput2 (32-bit libSDL3 on X11
+without 32-bit libXi.so.6), the mouse is held with a hidden cursor, a window
+grab and a warp back to the middle after each move */
+static BOOL mouse_warp_capture;
+static int mouse_warp_x;
+static int mouse_warp_y;
+#endif
+
 void platform_mouse_capture(BOOL capture)
 {
-	if (platform_window)
+	if (!platform_window)
+		return;
+#if defined(HALO_ANDROID) || defined(HALO_WEB) || defined(HALO_MACOS)
+	if (!SDL_SetWindowRelativeMouseMode(platform_window, capture ? true : false) && capture)
 	{
-		if (!SDL_SetWindowRelativeMouseMode(platform_window, capture ? true : false) && capture)
-		{
 #if defined(HALO_MACOS) && !defined(HALO_IOS)
-			input_state.mouse_released = TRUE;
+		input_state.mouse_released = TRUE;
 #endif
-			platform_log("mouse capture failed: %s", SDL_GetError());
+		platform_log("mouse capture failed: %s", SDL_GetError());
+	}
+#else
+	if (!capture)
+	{
+		mouse_warp_capture = FALSE;
+		SDL_SetWindowRelativeMouseMode(platform_window, false);
+		SDL_SetWindowMouseGrab(platform_window, false);
+		SDL_ShowCursor();
+		return;
+	}
+	if (SDL_GetKeyboardFocus() == platform_window &&
+		SDL_SetWindowRelativeMouseMode(platform_window, true))
+	{
+		if (mouse_warp_capture)
+		{
+			mouse_warp_capture = FALSE;
+			SDL_SetWindowMouseGrab(platform_window, false);
+			SDL_ShowCursor();
+		}
+		return;
+	}
+	/* (before the window has focus, SDL_SetWindowRelativeMouseMode sets
+	SDL_WINDOW_MOUSE_RELATIVE_MODE without testing XInput2; if XInput2 is
+	missing when focus arrives, non-relative motion is dropped until cleared) */
+	SDL_SetWindowRelativeMouseMode(platform_window, false);
+	mouse_warp_capture = TRUE;
+	SDL_HideCursor();
+	SDL_SetWindowMouseGrab(platform_window, true);
+	{
+		int width = 0, height = 0;
+
+		SDL_GetWindowSize(platform_window, &width, &height);
+		if (width > 0 && height > 0)
+		{
+			mouse_warp_x = width / 2;
+			mouse_warp_y = height / 2;
+			SDL_WarpMouseInWindow(platform_window, (float)mouse_warp_x, (float)mouse_warp_y);
 		}
 	}
+#endif
 }
 
 /* Called with input_lock held; discard both held and queued input so a
@@ -1251,6 +1453,44 @@ static void platform_mouse_released_set(BOOL released)
 	input_state.mouse_released = released;
 	platform_mouse_capture(!released && !input_state.ui_pointer);
 }
+
+#if !defined(HALO_ANDROID) || (defined(HALO_MACOS) && !defined(HALO_IOS))
+/* Another application is in front. Keyboard and mouse input stops, including
+a key or button already held, and the mouse grab is let go. A controller
+keeps working. The grab is released once per time the window goes behind. */
+static BOOL keyboard_mouse_suspended;
+
+static void platform_keyboard_mouse_release(void)
+{
+	input_state.focused = FALSE;
+	platform_input_clear();
+	mouse_buttons_down = 0;
+	memset(&ui_pointer, 0, sizeof(ui_pointer));
+	ui_pointer_wheel = 0.0f;
+	memset(&scoreboard_pointer, 0, sizeof(scoreboard_pointer));
+	scoreboard_pointer_active = FALSE;
+#if defined(HALO_MACOS) && !defined(HALO_IOS)
+	/* Coming back waits for a click, as a focus loss already did. Grabbing
+	the mouse again the moment the window returns drops the controller. */
+	input_state.mouse_released = TRUE;
+#endif
+	if (!keyboard_mouse_suspended)
+	{
+		keyboard_mouse_suspended = TRUE;
+		platform_mouse_capture(FALSE);
+	}
+}
+
+static BOOL platform_keyboard_mouse_live(void)
+{
+	if (!input_state.focused)
+	{
+		platform_keyboard_mouse_release();
+		return FALSE;
+	}
+	return TRUE;
+}
+#endif
 
 void platform_mouse_release_gameplay(void)
 {
@@ -1752,6 +1992,9 @@ void platform_pump_events(void)
 	SDL_Event event;
 	static BOOL looked_at_clipboard;
 	BOOL look_at_clipboard = !looked_at_clipboard;
+#if !defined(HALO_ANDROID) && !defined(HALO_WEB) && !defined(HALO_MACOS)
+	BOOL mouse_needs_warp = FALSE;
+#endif
 
 	if (!platform_window || SDL_GetCurrentThreadID() != platform_event_thread)
 		return;
@@ -1797,6 +2040,10 @@ void platform_pump_events(void)
 			exit(EXIT_SUCCESS);
 		case SDL_EVENT_KEY_DOWN:
 		case SDL_EVENT_KEY_UP:
+#if !defined(HALO_ANDROID) || (defined(HALO_MACOS) && !defined(HALO_IOS))
+			if (!platform_keyboard_mouse_live())
+				break;
+#endif
 #if defined(HALO_MACOS) && !defined(HALO_IOS)
 			/* Escape has context, even when an older config still binds it to
 			melee. A chat line uses it to let the line go, so it is not a
@@ -1879,6 +2126,8 @@ void platform_pump_events(void)
 			break;
 		case SDL_EVENT_MOUSE_MOTION:
 #if !defined(HALO_ANDROID) || (defined(HALO_MACOS) && !defined(HALO_IOS))
+			if (!platform_keyboard_mouse_live())
+				break;
 			if (scoreboard_pointer_active)
 			{
 				scoreboard_pointer.x = event.motion.x;
@@ -1895,11 +2144,23 @@ void platform_pump_events(void)
 				break;
 			}
 #endif
+#if !defined(HALO_ANDROID) && !defined(HALO_WEB) && !defined(HALO_MACOS)
+			if (mouse_warp_capture)
+			{
+				if ((int)event.motion.x == mouse_warp_x && (int)event.motion.y == mouse_warp_y)
+					break;
+				mouse_needs_warp = TRUE;
+			}
+#endif
 			input_state.mouse_dx += event.motion.xrel;
 			input_state.mouse_dy += event.motion.yrel;
 			break;
 		case SDL_EVENT_MOUSE_BUTTON_DOWN:
 		case SDL_EVENT_MOUSE_BUTTON_UP:
+#if !defined(HALO_ANDROID) || (defined(HALO_MACOS) && !defined(HALO_IOS))
+			if (!platform_keyboard_mouse_live())
+				break;
+#endif
 			if (event.button.button < 32)
 			{
 				if (event.button.down)
@@ -1969,10 +2230,25 @@ void platform_pump_events(void)
 			{
 				input_state.mouse_buttons[event.button.button] = event.button.down;
 				if (event.button.down)
+				{
 					mouse_buttons_pressed[event.button.button] = 1;
+#if !defined(HALO_ANDROID) && !defined(HALO_WEB) && !defined(HALO_MACOS)
+					if (!input_state.ui_pointer && !scoreboard_pointer_active &&
+						(input_state.mouse_released ||
+						(!SDL_GetWindowRelativeMouseMode(platform_window) && !mouse_warp_capture)))
+					{
+						input_state.mouse_released = FALSE;
+						platform_mouse_capture(TRUE);
+					}
+#endif
+				}
 			}
 			break;
 		case SDL_EVENT_MOUSE_WHEEL:
+#if !defined(HALO_ANDROID) || (defined(HALO_MACOS) && !defined(HALO_IOS))
+			if (!platform_keyboard_mouse_live())
+				break;
+#endif
 			if (binding_capture == _binding_capture_waiting && event.wheel.y != 0.0f)
 			{
 				binding_capture = _binding_capture_taken;
@@ -2018,13 +2294,10 @@ void platform_pump_events(void)
 			input_state.mouse_wheel += event.wheel.y;
 			break;
 		case SDL_EVENT_WINDOW_FOCUS_LOST:
+#if !defined(HALO_ANDROID) || (defined(HALO_MACOS) && !defined(HALO_IOS))
+			platform_keyboard_mouse_release();
+#else
 			input_state.focused = FALSE;
-			scoreboard_pointer_active = FALSE;
-#if defined(HALO_MACOS) && !defined(HALO_IOS)
-			/* the mouse waits for a click. Grabbing it again as the window
-			returns drops the controller. A key already held stays held. */
-			input_state.mouse_released = TRUE;
-			platform_mouse_capture(FALSE);
 #endif
 #ifdef HALO_ANDROID
 			touch_input_cancel();
@@ -2032,7 +2305,18 @@ void platform_pump_events(void)
 			break;
 		case SDL_EVENT_WINDOW_FOCUS_GAINED:
 			input_state.focused = TRUE;
+#if !defined(HALO_ANDROID) || (defined(HALO_MACOS) && !defined(HALO_IOS))
+			keyboard_mouse_suspended = FALSE;
+#endif
 			look_at_clipboard = TRUE;
+#if !defined(HALO_ANDROID) && !defined(HALO_WEB) && !defined(HALO_MACOS)
+			if (mouse_warp_capture)
+			{
+				mouse_warp_capture = FALSE;
+				SDL_SetWindowMouseGrab(platform_window, false);
+				SDL_ShowCursor();
+			}
+#endif
 #if !defined(HALO_ANDROID)
 			if (!input_state.mouse_released && !input_state.ui_pointer && !scoreboard_pointer_active)
 				platform_mouse_capture(TRUE);
@@ -2086,6 +2370,27 @@ void platform_pump_events(void)
 			break;
 		}
 	}
+#if !defined(HALO_ANDROID) || (defined(HALO_MACOS) && !defined(HALO_IOS))
+	/* A key pressed earlier in this poll, before focus was lost, is dropped
+	with the rest. */
+	if (!input_state.focused)
+		platform_keyboard_mouse_release();
+#endif
+#if !defined(HALO_ANDROID) && !defined(HALO_WEB) && !defined(HALO_MACOS)
+	if (mouse_warp_capture && mouse_needs_warp && !input_state.ui_pointer &&
+		!scoreboard_pointer_active && !input_state.mouse_released)
+	{
+		int width = 0, height = 0;
+
+		SDL_GetWindowSize(platform_window, &width, &height);
+		if (width > 0 && height > 0)
+		{
+			mouse_warp_x = width / 2;
+			mouse_warp_y = height / 2;
+			SDL_WarpMouseInWindow(platform_window, (float)mouse_warp_x, (float)mouse_warp_y);
+		}
+	}
+#endif
 	pthread_mutex_unlock(&input_lock);
 	looked_at_clipboard = TRUE;
 	platform_invite_clipboard(look_at_clipboard);

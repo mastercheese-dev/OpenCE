@@ -5,6 +5,11 @@
  */
 #if defined(HALO_MACOS_NATIVE_METAL) && HALO_MACOS_NATIVE_METAL
 #include "xgpu.h"
+
+/* display.reversed_depth (xgpu.h), read once as the device starts. The
+depth buffer is already 32-bit float. The shaders, the compare, the clear
+and the bias turn Direct3D's depth around so 1 is the near plane. */
+BOOL xgpu_reversed_depth;
 #include "xgpu_msl.h"
 #include "sdl_platform.h"
 #include "halo_ui_pointer.h"
@@ -349,6 +354,37 @@ static void native_fail(const char *operation, int status) {
         transport.error ? transport.error : "unsupported original renderer state");
     abort();
 }
+/* A leftover SetVertexData register, or a map vertex, can be a NaN. The
+   host rejects the whole frame for that. Packed registers keep their bits. */
+static int native_finite_float(float value)
+{
+    return value == value && value <= 3.4028234e38f && value >= -3.4028234e38f;
+}
+static void native_finite_vertices(float *vertices, uint32_t count, uint32_t packed_mask)
+{
+    uint32_t vertex, reg, component;
+    static int logged;
+
+    if (!vertices || !count)
+        return;
+    for (vertex = 0; vertex < count; vertex++) {
+        float *registers = vertices + (size_t)vertex * 64;
+        for (reg = 0; reg < 16; reg++) {
+            if (packed_mask & (1u << reg))
+                continue;
+            for (component = 0; component < 4; component++) {
+                if (native_finite_float(registers[reg * 4 + component]))
+                    continue;
+                registers[reg * 4 + component] = component == 3 ? 1.0f : 0.0f;
+                if (!logged) {
+                    logged = 1;
+                    platform_log("Native vertex: cleared a nonfinite component (register %u, component %u)",
+                        reg, component);
+                }
+            }
+        }
+    }
+}
 static void require_status(const char *operation, int status) {
     if (status) native_fail(operation,status);
 }
@@ -683,6 +719,8 @@ static void native_storage_initialize(void) {
 }
 static void native_initialize(void) {
     void *storage = aligned_alloc(16, HALO_METAL_MAX_PACKET);
+    xgpu_reversed_depth = config_boolean("display.reversed_depth");
+    platform_log("depth: %s", xgpu_reversed_depth ? "32-bit float, reversed" : "24-bit values, as the Xbox's");
     if (!storage) native_fail("allocate packet",HALO_METAL_MEMORY);
     require_status("setup transport",halo_metal_guest_setup(&transport,storage,HALO_METAL_MAX_PACKET));
     int fxaa=!strcmp(config_string("display.anti_aliasing"),"fxaa");
@@ -1696,6 +1734,15 @@ static struct native_resource *texture_get(D3DBaseTexture *texture,D3DPalette *p
     if (text) return text;
     struct native_resource *menu=menu_texture_get(texture->Data);
     if (menu) return menu;
+    /* A button or message-icon placeholder is an empty bitmap. Its picture
+    is the PNG registered for that texture, as on OpenGL. */
+    {
+        long placeholder_asset=hud_hires_placeholder_asset(texture->Data);
+        if (placeholder_asset>=0) {
+            struct native_resource *hud=hud_texture_get(placeholder_asset);
+            if (hud) return hud;
+        }
+    }
     struct native_resource *entry=rendered_alias(texture->Data);
     /* Device-owned indexed history is GPU storage even before its first
        Present. Resolve/initialize it without uploading undefined CPU bytes
@@ -2010,6 +2057,8 @@ static void draw_original(D3DPRIMITIVETYPE type,UINT first,UINT count,const WORD
         require_status("fetch original registers",metal_vertex_fetch(&device.vertex_shader->declaration,streams,
             device.attributes,plan.source_first,plan.source_count,vertices,vertex_bytes));
     }
+    if (!compact_vertices)
+        native_finite_vertices(vertices, plan.source_count, packed);
     if (draw_diagnostics) native_draw_phase(&profile_started,&profile_submitted,&draw_profile.expansion_ns);
     struct metal_draw_state_input input={0};
     struct metal_draw_state_output output;
@@ -2259,7 +2308,9 @@ void WINAPI D3DDevice_Clear(DWORD count,const D3DRECT *rectangles,DWORD flags,D3
     if (depth && (flags&D3DCLEAR_STENCIL)) command.clear.planes|=HALO_METAL_STENCIL;
     if (command.clear.planes&6) command.clear.depth_stencil=depth->ref;
     if (!command.clear.planes) return;
-    color_to_vec4(color,command.clear.rgba);command.clear.depth=z;command.clear.stencil=stencil&255;
+    color_to_vec4(color,command.clear.rgba);
+    command.clear.depth=xgpu_reversed_depth ? 1.0f - z : z;
+    command.clear.stencil=stencil&255;
     BOOL with_rectangles=count && rectangles;
     unsigned actual_count=with_rectangles ? count:1;
     for (unsigned i=0;i<actual_count;i++) {

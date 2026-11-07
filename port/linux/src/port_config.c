@@ -102,6 +102,17 @@ static const struct config_setting config_settings[] =
 		"Xbox's 4:3." },
 	{ "display.vsync", _config_boolean, "true", "HALO_NO_VSYNC", _environment_set_is_false, _platform_all,
 		"Wait for the display between frames; false draws as fast as possible." },
+	{ "display.reversed_depth", _config_boolean, "true", "HALO_REVERSED_DEPTH", _environment_value, _platform_desktop,
+		"Depth buffer of 32-bit floats, 1 at the near plane, so surfaces a few\n"
+		"millimetres apart stay apart at long range. false keeps the Xbox's\n"
+		"24-bit depth. Read once, as the game starts." },
+	{ "display.frames_in_flight", _config_integer, "3", "HALO_FRAMES_IN_FLIGHT", _environment_value, _platform_desktop,
+		"How many frames the GPU may have queued (1 to 8) on Windows and Linux.\n"
+		"0 leaves the queue to the driver. 3 keeps the frame times even when\n"
+		"the GPU is the limit." },
+	{ "display.shader_cache", _config_boolean, "true", "HALO_SHADER_CACHE", _environment_value, _platform_desktop,
+		"On Windows and Linux, keep each linked GPU program on disk and load it\n"
+		"next time, instead of linking it again the first time it is drawn." },
 	/* Original Xbox presentation is the fork's baseline; enhancements are opt-in. */
 	{ "display.max_fps", _config_integer, "0", "HALO_MAX_FPS", _environment_value, _platform_desktop,
 		"With vsync off, the most frames a second: 0 for twice the display's\n"
@@ -116,9 +127,9 @@ static const struct config_setting config_settings[] =
 		"Draw a frame for every display refresh, blending between the game's 30\n"
 		"ticks a second; false keeps the original 30 frames a second." },
 	{ "display.timer_position", _config_integer, "0", NULL, _environment_value, _platform_all,
-		"CoreCE timer position: 0 is top center, 1 bottom center, 2 bottom right." },
+		"OpenCE timer position: 0 is top center, 1 bottom center, 2 bottom right." },
 	{ "display.timer_scale", _config_real, "1.0", NULL, _environment_value, _platform_all,
-		"CoreCE timer size, 0.5 to 1.0. These preferences do not enable the timer." },
+		"OpenCE timer size, 0.5 to 1.0. These preferences do not enable the timer." },
 	{ "display.direct_camera", _config_boolean, "false", "HALO_DIRECT_CAMERA", _environment_value, _platform_desktop,
 		"In first person, point the view where the player aims now instead of\n"
 		"where the last tick left it: the view turns the frame the mouse moves,\n"
@@ -192,6 +203,12 @@ static const struct config_setting config_settings[] =
 		"In multiplayer, split this screen when only one local player is in the\n"
 		"game. The other pane stays black. Your pane is display.teammate_view_slot.\n"
 		"Campaign stays one pane. A second local player there is a real split." },
+	{ "display.split_shared_only", _config_boolean, "false", "HALO_SPLIT_SHARED_ONLY", _environment_value,
+		_platform_all,
+		"When split screen is on, leave out a teammate whose own split screen\n"
+		"is off. Two players with one off is one pane. Three with one off is\n"
+		"the two-pane split. A machine that has not said keeps its pane\n"
+		"(black in matchmaking until it does)." },
 	{ "display.scoreboard_team_layout", _config_string, "\"teams\"", "HALO_SCOREBOARD_TEAM_LAYOUT", _environment_value,
 		_platform_all,
 		"How the scoreboard lists a team game's players: \"teams\" in a column for\n"
@@ -240,26 +257,36 @@ static const struct config_setting config_settings[] =
 	{ "audio.dialogue_volume", _config_real, "1.0", NULL, _environment_value, _platform_all,
 		"Unit and scripted dialogue volume, 0.0 to 1.0." },
 	{ "audio.timer_volume", _config_real, "1.0", NULL, _environment_value, _platform_all,
-		"Optional CoreCE timer recordings volume, 0.0 to 1.0." },
+		"Optional OpenCE timer recordings volume, 0.0 to 1.0." },
 	{ "audio.timer_countdown", _config_boolean, "true", NULL, _environment_value, _platform_all,
-		"Play countdown announcements when the host enables CoreCE timer sounds." },
+		"Play countdown announcements when the host enables OpenCE timer sounds." },
 	{ "audio.timer_beeps", _config_boolean, "true", NULL, _environment_value, _platform_all,
-		"Play countdown beeps when the host enables CoreCE timer sounds." },
+		"Play countdown beeps when the host enables OpenCE timer sounds." },
 	{ "audio.timer_minutes", _config_boolean, "true", NULL, _environment_value, _platform_all,
-		"Announce elapsed minutes when the host enables CoreCE timer sounds." },
+		"Announce elapsed minutes when the host enables OpenCE timer sounds." },
 	{ "audio.timer_items", _config_boolean, "false", NULL, _environment_value, _platform_all,
 		"Announce scheduled rockets and powerups on supported maps when the\n"
-		"host enables CoreCE timer sounds. Off preserves the existing timer audio." },
+		"host enables OpenCE timer sounds. Off preserves the existing timer audio." },
 	{ "audio.hardcore_timer_voice", _config_boolean, "true", NULL, _environment_value, _platform_all,
 		"Kept so an old file can move onto display.match_timer. The match clock's\n"
 		"Voice choice plays this machine's countdown." },
 	{ "audio.menu_music", _config_boolean, "true", NULL, _environment_value, _platform_all,
 		"Play the main menu title music. False keeps menu effects and gameplay\n"
 		"audio enabled. In-game audio settings apply immediately when accepted." },
+	{ "audio.channels", _config_string, "\"auto\"", "HALO_AUDIO_CHANNELS", _environment_value, _platform_desktop,
+		"\"stereo\", \"5.1\" (surround, as the Xbox's Dolby Digital), or \"auto\"\n"
+		"for 5.1 when the sound device has six or more channels." },
 	{ "audio.reverb", _config_boolean, "true", "HALO_REVERB", _environment_value, _platform_all,
 		"Reverberate the world's sounds as the place the player is in does (the\n"
 		"maps' sound environments, as the Xbox's I3DL2 reverb did); false keeps\n"
 		"them dry." },
+	{ "audio.hrtf", _config_string, "\"auto\"", "HALO_AUDIO_HRTF", _environment_value, _platform_all,
+		"Place 3D sounds around the head on stereo output, as the Xbox did:\n"
+		"\"on\", \"off\", or \"auto\" (on when the output's name says it is\n"
+		"headphones). \"off\" and \"auto\" on speakers keep the stereo pan." },
+	{ "audio.doppler", _config_boolean, "true", "HALO_AUDIO_DOPPLER", _environment_value, _platform_all,
+		"Shift the pitch of a moving sound, like a vehicle or a shot going\n"
+		"past, as the Xbox did. false keeps every sound at its own pitch." },
 	{ "audio.resampler", _config_string, "\"sinc\"", "HALO_AUDIO_RESAMPLER", _environment_value, _platform_all,
 		"How sounds are converted to the output's rate: \"sinc\" with a\n"
 		"band-limited low pass; \"linear\" between neighbouring samples,\n"
@@ -303,6 +330,9 @@ static const struct config_setting config_settings[] =
 		"Moving the mouse forward looks down." },
 	{ "network.block_mouse_aim_assist", _config_boolean, "false", "HALO_NET_BLOCK_MOUSE_AIM_ASSIST", _environment_value,
 		_platform_all, "Host: disable mouse aim assist for mouse/keyboard players. The view does not stick, and shots are not pulled onto a target. Controllers and touch keep their own assist." },
+	{ "network.mods_allowed", _config_boolean, "true", "HALO_NET_MODS_ALLOWED", _environment_value, _platform_all,
+		"Host: whether players in this game may play mods. false makes every\n"
+		"machine use the map's own tags. A machine that does not confirm is dropped." },
 	{ "input.mouse_aim_assist", _config_boolean, "false", "HALO_MOUSE_AIM_ASSIST", _environment_value, _platform_desktop,
 		"Magnetism while aiming with the mouse, as with a controller: the view\n"
 		"slowed and dragged along by a target. The last of the mouse and the\n"
@@ -397,7 +427,8 @@ static const struct config_setting config_settings[] =
 	{ "game.enhanced_animations", _config_boolean, "true", "HALO_ENHANCED_ANIMATIONS", _environment_value, _platform_all,
 		"The player bipeds' grenade throws keep their legs moving (crouched,\n"
 		"in the air and in a vehicle's seat too), riders' hands leave the grips\n"
-		"to throw and reload, and a player turns with the aim while throwing;\n"
+		"to throw and reload, and a player turns with the aim while throwing\n"
+		"and in the air (so shots after a turn in a jump go to the crosshair);\n"
 		"false: the original animations, which freeze the legs and stand a\n"
 		"rider up." },
 	{ "game.custom_edition", _config_boolean, "true", "HALO_CUSTOM_EDITION", _environment_value, _platform_all,
@@ -444,9 +475,8 @@ static const struct config_setting config_settings[] =
 		"single quotes: 'C:\\Games\\Halo'." },
 	{ "paths.saves", _config_string, "\"\"", "HALO_SAVE_ROOT", _environment_value, _platform_desktop,
 		"Where saved games and profiles go; empty for the usual place\n"
-		"(~/.local/share/halo-og, or %APPDATA%\\Halo OG on Windows).\n"
-		"Legacy default saves are copied without replacing existing files;\n"
-		"if migration fails, the game reports it and keeps the legacy folder." },
+		"(~/.local/share/halo-linux, or %APPDATA%\\halo on Windows, or\n"
+		"~/Library/Application Support/OpenCE on Mac)." },
 	{ "paths.custom_edition", _config_string, "\"\"", "HALO_CUSTOM_EDITION_ROOT", _environment_value, _platform_desktop,
 		"A Halo Custom Edition install whose maps folder is looked in after the\n"
 		"custom_maps folder for Custom Edition maps and their bitmaps.map,\n"
@@ -536,11 +566,11 @@ static const struct config_setting config_settings[] =
 		_platform_all,
 		"Playing in another's game: the most kilobytes a second this machine\n"
 		"sends of maps to other players (16 to 10240: 10 MB/s)." },
-	{ "network.map_download", _config_boolean, "false", "HALO_NET_MAP_DOWNLOAD", _environment_value, _platform_all,
+	{ "network.map_download", _config_boolean, "true", "HALO_NET_MAP_DOWNLOAD", _environment_value, _platform_all,
 		"Joining a game on a Custom Edition map this machine does not have:\n"
-		"download it (and the resource maps it needs) from the game's players\n"
-		"into custom_maps, if its host shares it (network.map_share); false\n"
-		"leaves the game, saying which map is missing." },
+		"the game asks the host for the map (and the resource maps it needs).\n"
+		"The host sends it when that host shares maps (network.map_share). A\n"
+		"saved false does not stop the ask." },
 	{ "network.coop_public", _config_boolean, "false", "HALO_NET_COOP_PUBLIC", _environment_value, _platform_all,
 		"Whether an online co-op game (Create Game > Internet, a SINGLEPLAYER\n"
 		"map) starts as PUBLIC or, false, PRIVATE: Server Setup's LISTING in\n"
@@ -599,6 +629,12 @@ static const struct config_setting config_settings[] =
 		"invite find each other (its messages are encrypted), beside this file\n"
 		"unless a full path: one host:port on each line, up to 4. Updates\n"
 		"replace brokers.txt: keep a list of your own under another name." },
+	{ "network.masters_file", _config_string, "\"masters.txt\"",
+		"HALO_NET_MASTERS_FILE", _environment_value, _platform_all,
+		"The master servers the server browser asks for dedicated servers,\n"
+		"beside this file unless a full path: an https:// address and its\n"
+		"ed25519: key on each line, up to 4. A file that names none leaves\n"
+		"the official master." },
 	{ "network.stun_servers", _config_string, "\"stun.l.google.com:19302,stun.cloudflare.com:3478\"",
 		"HALO_NET_STUN", _environment_value, _platform_all,
 		"Public STUN servers that tell this machine its internet address;\n"

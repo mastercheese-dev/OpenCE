@@ -27,6 +27,9 @@ zlib (port/third_party/zlib).
 #include "platform.h"
 #include "port_config.h"
 #include "xgpu.h"
+#if !defined(HALO_MACOS_NATIVE_METAL)
+#include "metal_hud_mipmap.h"
+#endif
 
 #include "zlib_prefixed.h"
 
@@ -39,6 +42,7 @@ zlib (port/third_party/zlib).
 
 /* the game's (port/linux/game/hud_hires_tags.c) */
 long hud_hires_asset_at(unsigned long address, long width, long height);
+long hud_hires_asset_next(unsigned long address, long width, long height, long *slot);
 long hud_hires_asset_stock_custom_edition(unsigned long address, long width, long height, long asset);
 
 #define MAXIMUM_TEXTURES 128
@@ -148,27 +152,35 @@ long hud_hires_override_find(unsigned long address, unsigned long width, unsigne
 	}
 	if (!hud_enabled && !titles_enabled)
 		return -1;
-	asset = hud_hires_asset_at(address, (long)width, (long)height);
-	if (asset < 0 || asset >= hud_hires_asset_count())
-		return -1;
-	if (!(hud_hires_embedded[asset].title ? titles_enabled : hud_enabled))
-		return -1;
-	/* (a Custom Edition map's stock HUD bitmap, laid out as this texture's,
-	has its own pixels) */
-	if (hud_hires_asset_stock_custom_edition(address, (long)width, (long)height, asset))
-		return asset;
-	if (crc32(0L, (const Bytef *)address, (uInt)level0_size) != hud_hires_embedded[asset].crc)
+	/* one bitmap can have the Xbox texture and the Custom Edition texture.
+	the pixels choose which, and a changed sheet keeps its own */
 	{
-		if (!textures[asset].other_pixels_logged)
+		long slot = -1;
+		long logged = -1;
+
+		for (asset = hud_hires_asset_next(address, (long)width, (long)height, &slot);
+			asset >= 0 && asset < hud_hires_asset_count();
+			asset = hud_hires_asset_next(address, (long)width, (long)height, &slot))
+		{
+			if (!(hud_hires_embedded[asset].title ? titles_enabled : hud_enabled))
+				continue;
+			/* (a Custom Edition map's stock HUD bitmap, laid out as this texture's,
+			has its own pixels) */
+			if (hud_hires_asset_stock_custom_edition(address, (long)width, (long)height, asset) ||
+				crc32(0L, (const Bytef *)address, (uInt)level0_size) == hud_hires_embedded[asset].crc)
+				return asset;
+			if (logged < 0)
+				logged = asset;
+		}
+		if (logged >= 0 && !textures[logged].other_pixels_logged)
 		{
 			platform_log("high-res hud: %s bitmap %d is not the one its texture was drawn for here "
 				"(another language's or a modified map): drawn as it is",
-				hud_hires_embedded[asset].tag, hud_hires_embedded[asset].bitmap);
-			textures[asset].other_pixels_logged = 1;
+				hud_hires_embedded[logged].tag, hud_hires_embedded[logged].bitmap);
+			textures[logged].other_pixels_logged = 1;
 		}
-		return -1;
 	}
-	return asset;
+	return -1;
 }
 
 int hud_hires_override_coverage(long asset)
@@ -180,7 +192,10 @@ int hud_hires_override_coverage(long asset)
 
 /* the placeholders of the textures drawn for some of a bitmap's sprites
 (port/linux/game/hud_hires_tags.c): their D3D textures' Data */
-#define MAXIMUM_PLACEHOLDERS 8
+/* faces, triggers, stick frames, and the message-icon sheets that share
+this table. 8 filled up on the sheets and the later buttons kept the
+empty placeholder. */
+#define MAXIMUM_PLACEHOLDERS 32
 
 static struct
 {
@@ -188,6 +203,35 @@ static struct
 	long asset;
 } placeholders[MAXIMUM_PLACEHOLDERS];
 static long placeholder_count = 0;
+/* port: a bit per hash of a placeholder's data, so a bind that is not one
+skips the walk. A set bit still searches. */
+static unsigned char placeholder_filter[128];
+
+static unsigned char placeholder_filter_bit(unsigned long data, unsigned char **byte)
+{
+	unsigned long hash = data * 2654435761u;
+	unsigned long bit = hash >> 22;
+
+	*byte = &placeholder_filter[(bit >> 3) & 127];
+	return (unsigned char)(1u << (bit & 7));
+}
+
+static void placeholder_filter_build(void)
+{
+	long index;
+
+	memset(placeholder_filter, 0, sizeof(placeholder_filter));
+	for (index = 0; index < placeholder_count; index++)
+	{
+		unsigned char *byte;
+		unsigned char bit;
+
+		if (!placeholders[index].data)
+			continue;
+		bit = placeholder_filter_bit(placeholders[index].data, &byte);
+		*byte |= bit;
+	}
+}
 
 /* the sequences whose sprites the texture is drawn for (hud_hires.h), or 0 */
 unsigned long hud_hires_asset_sprites(long asset)
@@ -250,19 +294,34 @@ void hud_hires_register_placeholder(long asset, const unsigned long *texture)
 		placeholders[index].data = texture ? texture[1] : 0;
 		placeholders[index].asset = asset;
 	}
+	placeholder_filter_build();
+}
+
+long hud_hires_placeholder_asset(unsigned long data)
+{
+	long index;
+	unsigned char *byte;
+	unsigned char bit;
+
+	bit = placeholder_filter_bit(data, &byte);
+	if (!data || !(*byte & bit))
+		return -1;
+	for (index = 0; index < placeholder_count; index++)
+	{
+		if (placeholders[index].data == data)
+			return placeholders[index].asset;
+	}
+	return -1;
 }
 
 #if !defined(HALO_MACOS_NATIVE_METAL)
 unsigned int hud_hires_placeholder_texture(unsigned long data, unsigned long *levels)
 {
-	long index;
+	long asset = hud_hires_placeholder_asset(data);
 
-	for (index = 0; data && index < placeholder_count; index++)
-	{
-		if (placeholders[index].data == data)
-			return hud_hires_override_texture(placeholders[index].asset, levels);
-	}
-	return 0;
+	if (asset < 0)
+		return 0;
+	return hud_hires_override_texture(asset, levels);
 }
 #endif
 
@@ -464,7 +523,7 @@ unsigned char *hud_hires_png_pixels(const void *png, unsigned long size, unsigne
 static unsigned int png_pixels_texture(unsigned char *pixels, unsigned long width, unsigned long height,
 	unsigned long *levels)
 {
-	unsigned long largest;
+	unsigned long largest, mip, mip_width, mip_height;
 	GLuint texture;
 
 	if (!pixels)
@@ -481,9 +540,24 @@ static unsigned int png_pixels_texture(unsigned char *pixels, unsigned long widt
 	glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_BASE_LEVEL, 0);
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAX_LEVEL, (GLint)*levels - 1);
+	/* the PNG is straight RGBA. Sample those channels, and fill every
+	level here (the same reduction as the Metal HUD) so a missing level
+	is not what a small icon samples. */
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_SWIZZLE_R, GL_RED);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_SWIZZLE_G, GL_GREEN);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_SWIZZLE_B, GL_BLUE);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_SWIZZLE_A, GL_ALPHA);
 	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, (GLsizei)width, (GLsizei)height, 0, GL_RGBA, GL_UNSIGNED_BYTE, pixels);
-	if (*levels > 1)
-		glGenerateMipmap(GL_TEXTURE_2D);
+	mip_width = width;
+	mip_height = height;
+	for (mip = 1; mip < *levels; mip++)
+	{
+		metal_hud_mip_reduce_rgba(pixels, (uint32_t)mip_width, (uint32_t)mip_height);
+		mip_width = mip_width > 1 ? mip_width / 2 : 1;
+		mip_height = mip_height > 1 ? mip_height / 2 : 1;
+		glTexImage2D(GL_TEXTURE_2D, (GLint)mip, GL_RGBA8, (GLsizei)mip_width, (GLsizei)mip_height, 0,
+			GL_RGBA, GL_UNSIGNED_BYTE, pixels);
+	}
 	xgpu_gl_state_invalidate();
 	free(pixels);
 	return texture;

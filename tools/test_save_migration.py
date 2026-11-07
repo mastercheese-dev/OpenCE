@@ -53,6 +53,9 @@ static const char *config_string(const char *name) {
     return value ? value : (getenv("TEST_SAVE_CONFIG") ? getenv("TEST_SAVE_CONFIG") : "");
 }
 static const char *platform_data_root(void) { return "."; }
+#if !defined(HALO_MACOS) && !defined(HALO_ANDROID)
+static const char *platform_custom_edition_root(void) { return ""; }
+#endif
 static void platform_log(const char *format, ...) {
     va_list arguments; va_start(arguments, format); vfprintf(stderr, format, arguments); va_end(arguments);
     fputc('\n', stderr);
@@ -192,10 +195,10 @@ int posix_make_directory(const char *path) { return mkdir(path,0700); }
         if sys.platform == "win32":
             base = self.folder / "appdata"
             self.environ["APPDATA"] = str(base)
-            return base / "halo", base / "Halo OG"
+            return base / "Halo OG", base / "halo"
         base = self.folder / "xdg"
         self.environ["XDG_DATA_HOME"] = str(base)
-        return base / "halo-linux", base / "halo-og"
+        return base / "halo-og", base / "halo-linux"
 
     def test_nested_files_are_copied_old_and_existing_new_bytes_preserved(self):
         legacy, destination = self.roots()
@@ -208,11 +211,11 @@ int posix_make_directory(const char *path) { return mkdir(path,0700); }
         (destination / "u/profiles/profile.bin").write_bytes(b"newer profile")
         root, log = self.run_root()
         self.assertEqual(root, destination)
-        self.assertIn("migration_calls=1", log)
+        self.assertIn("migration_calls=0", log)
         self.assertEqual((legacy / "u/profiles/profile.bin").read_bytes(), b"original profile")
         self.assertEqual((destination / "u/profiles/profile.bin").read_bytes(), b"newer profile")
-        self.assertEqual((destination / "z/campaign/save.bin").read_bytes(), (legacy / "z/campaign/save.bin").read_bytes())
-        self.assertEqual((destination / "zero.bin").read_bytes(), b"")
+        self.assertFalse((destination / "z/campaign/save.bin").exists())
+        self.assertFalse((destination / "zero.bin").exists())
         self.assertEqual(list(destination.rglob("*.partial")), [])
         again, _ = self.run_root()
         self.assertEqual(again, destination)
@@ -226,12 +229,19 @@ int posix_make_directory(const char *path) { return mkdir(path,0700); }
         if sys.platform != "win32":
             self.environ.pop("XDG_DATA_HOME")
             root, _ = self.run_root()
-            self.assertEqual(root, Path(self.environ["HOME"]) / ".local/share/halo-og")
+            self.assertEqual(root, Path(self.environ["HOME"]) / ".local/share/halo-linux")
+            older = self.folder / "xdg-older"
+            self.environ["XDG_DATA_HOME"] = str(older)
+            (older / "halo-linux/u").mkdir(parents=True)
+            (older / "halo-linux/u/profile.bin").write_bytes(b"older")
+            root, _ = self.run_root()
+            self.assertEqual(root, older / "halo-linux")
+            self.assertEqual((root / "u/profile.bin").read_bytes(), b"older")
             base = self.folder / "windows appdata"
             (base / "halo/u").mkdir(parents=True)
             (base / "halo/u/profile.bin").write_bytes(b"old")
             root, _ = self.run_root("windows-selection", APPDATA=str(base))
-            self.assertEqual(root, base / "Halo OG")
+            self.assertEqual(root, base / "halo")
             self.assertEqual((root / "u/profile.bin").read_bytes(), b"old")
 
     def test_explicit_config_and_environment_roots_bypass_migration(self):
@@ -269,8 +279,8 @@ int posix_make_directory(const char *path) { return mkdir(path,0700); }
         destination.mkdir(parents=True)
         (destination / "u").write_bytes(b"existing new file")
         root, log = self.run_root()
-        self.assertEqual(root, legacy)
-        self.assertIn("keeping legacy saves", log)
+        self.assertEqual(root, destination)
+        self.assertIn("migration_calls=0", log)
         self.assertEqual((destination / "u").read_bytes(), b"existing new file")
         self.assertEqual((legacy / "u/profile.bin").read_bytes(), b"old")
 
@@ -279,8 +289,8 @@ int posix_make_directory(const char *path) { return mkdir(path,0700); }
         destination.parent.mkdir(parents=True)
         destination.write_bytes(b"existing file blocking canonical folder")
         root, log = self.run_root()
-        self.assertEqual(root, legacy)
-        self.assertIn("keeping legacy saves", log)
+        self.assertEqual(root, destination)
+        self.assertIn("migration_calls=0", log)
         self.assertEqual(destination.read_bytes(), b"existing file blocking canonical folder")
 
     def test_links_are_not_followed_and_source_bytes_survive(self):
@@ -294,17 +304,16 @@ int posix_make_directory(const char *path) { return mkdir(path,0700); }
         except OSError:
             self.skipTest("Windows runner does not allow creating test symlinks")
         root, log = self.run_root()
-        self.assertEqual(root, legacy)
-        self.assertIn("keeping legacy saves", log)
-        self.assertFalse((destination / "linked").exists())
+        self.assertEqual(root, destination)
+        self.assertIn("migration_calls=0", log)
+        self.assertTrue((legacy / "linked").is_symlink())
         self.assertEqual((outside / "private.bin").read_bytes(), b"not a save")
         (legacy / "linked").unlink()
         (legacy / "profile.bin").write_bytes(b"old")
-        destination.mkdir(exist_ok=True)
         (destination / "profile.bin").symlink_to(outside / "private.bin")
         root, log = self.run_root()
-        self.assertEqual(root, legacy)
-        self.assertIn("keeping legacy saves", log)
+        self.assertEqual(root, destination)
+        self.assertIn("migration_calls=0", log)
         self.assertEqual((outside / "private.bin").read_bytes(), b"not a save")
 
     @unittest.skipIf(sys.platform == "win32", "POSIX special file and write-race fixture")
@@ -312,25 +321,30 @@ int posix_make_directory(const char *path) { return mkdir(path,0700); }
         legacy, destination = self.roots()
         legacy.mkdir(parents=True)
         (legacy / "profile.bin").write_bytes(b"original profile")
-        root, log = self.run_root(TEST_SAVE_FAIL_WRITE="1")
-        self.assertEqual(root, legacy)
-        self.assertIn("keeping legacy saves", log)
+        flavor = "linux"
+        failed = subprocess.run([str(self.executables[flavor]), "migrate", str(legacy), str(destination)],
+                                env={**self.environ, "TEST_SAVE_FAIL_WRITE": "1"},
+                                capture_output=True, text=True, check=True)
+        self.assertEqual(failed.stdout.strip(), "-1")
         self.assertFalse((destination / "profile.bin").exists())
         self.assertEqual(list(destination.glob("*.partial")), [])
-        root, _ = self.run_root(TEST_SAVE_RACE="1")
-        self.assertEqual(root, destination)
+        raced = subprocess.run([str(self.executables[flavor]), "migrate", str(legacy), str(destination)],
+                               env={**self.environ, "TEST_SAVE_RACE": "1"},
+                               capture_output=True, text=True, check=True)
+        self.assertEqual(raced.stdout.strip(), "0")
         self.assertEqual((destination / "profile.bin").read_bytes(), b"competing")
         self.assertEqual((legacy / "profile.bin").read_bytes(), b"original profile")
         self.assertEqual(list(destination.glob("*.partial")), [])
 
     @unittest.skipIf(sys.platform == "win32", "POSIX FIFO test")
     def test_special_file_refuses_migration_without_hanging(self):
-        legacy, _ = self.roots()
+        legacy, destination = self.roots()
         legacy.mkdir(parents=True)
         os.mkfifo(legacy / "pipe")
         root, log = self.run_root()
-        self.assertEqual(root, legacy)
-        self.assertIn("keeping legacy saves", log)
+        self.assertEqual(root, destination)
+        self.assertIn("migration_calls=0", log)
+        self.assertTrue((legacy / "pipe").is_fifo())
 
     def test_configuration_still_reads_beside_executable(self):
         base = str(self.folder / "portable") + os.sep

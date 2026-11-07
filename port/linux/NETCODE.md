@@ -241,12 +241,18 @@ connection, and the host answers each machine's datagrams where they come
 from, so that a second copy of the game on one computer, on a port of its
 own, plays too; version 32 sends the host's mouse aim assist policy
 (distributed message 90, `network_aim_assist.c`), which a client must not
-ignore.
+ignore; version 36 tells every machine where a player's blast went off
+(distributed message 101), including one that damaged nobody; version 41
+uses OpenCE's game record, 16 bytes longer, and OpenCE's message numbers
+91 through 95 (shield effects, a client's build, a shot's origin, and a
+dedicated server's map vote). This build's match start, split screen, and
+blasts are messages 96 through 101. A host that never sends the match start
+is joined once its clock is moving.
 
 This Mac build plays that options record (time limit, loadout, friendly fire,
 vehicle respawn, team balance, radar, vehicle sets, and no-map-weapons) and
-keeps CoreCE capability on advertisement flag `0x04`, distinct from the in-progress
-flag `0x02`. An enabled CoreCE session advertises version `0x800B`.
+keeps OpenCE capability on advertisement flag `0x04`, distinct from the in-progress
+flag `0x02`. An enabled OpenCE session advertises version `0x800B`.
 
 A client plays by its host's rules: in another's game (searching for it,
 in its lobby, or playing it) the developer console, the telnet console
@@ -409,6 +415,16 @@ change. Clients take it only from the host and default to blocked until it
 arrives. This adds distributed message 90; network version 32 requires
 matching builds so an older client cannot silently ignore the rule.
 
+Server Setup's MODS is ALLOWED or NOT ALLOWED (`network.mods_allowed`,
+default allowed). NOT ALLOWED makes the host and every client play the
+map's own tags for that game. The host sends distributed message 103
+reliably when a client is ready and when the choice changes. A client
+answers with message 104. The network version stays 41. A machine that
+does not answer is dropped from a game that does not allow mods, so an
+older client cannot keep its mods there. A game that allows mods still
+takes an older client. The choice is this machine's config. It is not a
+simulated rule, and a mod still changes no tag the game simulates.
+
 ## Joining a game in progress
 
 A game stays open when it starts (on the Xbox it closed, since every
@@ -465,9 +481,10 @@ its name alone beside it, has its name given back as the map lists find it.
   their version (`cache_files_map_present`), or one whose resource maps it
   lacks, asks the host over its connection
   (`_distributed_message_map_share_request`: the level, and which of the
-  map, bitmaps.map, sounds.map and loc.map it lacks) instead of leaving, if
-  `network.map_download` lets it. Its players wait to join until the host's settings
-  have named the map, and for a game in progress until it is downloaded; in
+  map, bitmaps.map, sounds.map and loc.map it lacks) instead of leaving.
+  The host sends the map when that host shares maps. Its players wait to
+  join until the host's settings have named the map, and for a game in
+  progress until it is downloaded; in
   the lobby they join at once. A host that starts while a machine is still
   downloading starts the others without it: the machine's players are held
   out of the game, and so is any player it asks for meanwhile (a machine

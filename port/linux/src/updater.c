@@ -55,7 +55,7 @@ update.h's: posix_update.c on Linux, win32_update.c on Windows.
 #define HALO_BUILD_CHANNEL "main"
 #endif
 #ifndef HALO_UPDATE_REPOSITORY
-#define HALO_UPDATE_REPOSITORY "mastercheese-dev/CoreCE"
+#define HALO_UPDATE_REPOSITORY "mastercheese-dev/OpenCE"
 #endif
 
 #define UPDATE_REPOSITORY HALO_UPDATE_REPOSITORY
@@ -291,9 +291,18 @@ static int zip_extract(const char *zip_path, char names[][256], int *name_count,
 		/* (a folder, or a name that would leave the game's folder, is left
 		out: the release's files are all at its top) */
 		if (name_length && name[name_length - 1] != '/' && !strchr(name, '/') && !strchr(name, '\\') &&
-			strcmp(name, "..") && strcmp(name, ".") && *name_count < MAXIMUM_UPDATE_FILES)
+			strcmp(name, "..") && strcmp(name, "."))
 		{
 			int method = (int)zip_word(header + 10);
+
+			/* port: a release with more files than this build can install is refused, not installed in part (the
+			files past the limit were left out, and the update still counted as done) */
+			if (*name_count >= MAXIMUM_UPDATE_FILES)
+			{
+				snprintf(error, error_size, "the download has more files than this build can install (%d)",
+					MAXIMUM_UPDATE_FILES);
+				goto done;
+			}
 
 			if (method != 0 && method != 8)
 			{
@@ -512,7 +521,7 @@ static int updater_download_zip(const char *zip_path, char *error, size_t error_
 		snprintf(error, error_size, "could not start the download");
 		return 0;
 	}
-	window = SDL_CreateWindow("CoreCE", 640, 150, 0);
+	window = SDL_CreateWindow("OpenCE", 640, 150, 0);
 	if (window)
 		renderer = SDL_CreateRenderer(window, SDL_SOFTWARE_RENDERER);
 	while (!finished)

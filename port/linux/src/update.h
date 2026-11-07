@@ -23,6 +23,15 @@ error */
 int update_download(const char *url, const char *path, update_progress_proc progress, void *context,
 	char *error, int error_size);
 
+/* one GET of an https:// address, the certificate and host name checked.
+1 if an answer came: its status, its headers ("Name: value" lines, each
+ended by "\n"), and its body (at most body_capacity - 1 bytes, then a 0).
+body_size is how many body bytes were kept. 0 if none came, or the body
+did not fit. Any thread may call it. Integers and pointers only: the guest
+and the host do not share a struct */
+int host_https_get(const char *url, int *status, char *headers, int headers_capacity, char *body,
+	int body_capacity, int *body_size);
+
 /* the full path of this executable; 1 on success */
 int update_executable_path(char *path, int size);
 

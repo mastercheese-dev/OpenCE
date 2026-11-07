@@ -11,11 +11,10 @@ h:\ is the Halo Custom Edition install paths.custom_edition names, if any
 (its maps folder holds the resource maps Custom Edition maps need, and more
 maps).
 Every other drive letter X:\ is the subdirectory X/ of the save root (z:\ holds the persistent cache and saves,
-u:\ user data, t:\ title data): paths.saves, else %APPDATA%/Halo OG on
-Windows, $XDG_DATA_HOME/halo-og or ~/.local/share/halo-og on Linux. The
-legacy halo/halo-linux tree is copied without replacing existing files;
-an incomplete or unsafe copy keeps the legacy root and logs the failure.
-Path components are
+u:\ user data, t:\ title data): paths.saves, else %APPDATA%/halo on
+Windows, $XDG_DATA_HOME/halo-linux or ~/.local/share/halo-linux on Linux,
+and ~/Library/Application Support/OpenCE on Mac. Those are the folders
+OpenCE uses. Path components are
 matched case-insensitively, like the Xbox's FATX volumes.
 */
 
@@ -226,64 +225,26 @@ const char *platform_save_root(void)
 		const char *environment = config_string("paths.saves");
 		const char *data_home = getenv("XDG_DATA_HOME");
 		const char *home = getenv("HOME");
-#if !defined(HALO_ANDROID) && !defined(HALO_MACOS)
-		char legacy[MAX_PATH] = "";
-		int root_length = 0, legacy_length = 0;
-#endif
 
 		if (*environment)
 			snprintf(root, sizeof(root), "%s", environment);
+#ifdef HALO_MACOS
+		else if (home && *home)
+			snprintf(root, sizeof(root), "%s/Library/Application Support/OpenCE", home);
+#endif
 #ifdef _WIN32
 		/* the Windows build (port/windows) keeps saves in the roaming
-		application data folder */
+		application data folder, in the same halo folder OpenCE uses */
 		else if (getenv("APPDATA") && *getenv("APPDATA"))
-		{
-			root_length = snprintf(root, sizeof(root), "%s/Halo OG", getenv("APPDATA"));
-			legacy_length = snprintf(legacy, sizeof(legacy), "%s/halo", getenv("APPDATA"));
-		}
+			snprintf(root, sizeof(root), "%s/halo", getenv("APPDATA"));
 #endif
 		else if (data_home && *data_home)
-		{
-#if !defined(HALO_ANDROID) && !defined(HALO_MACOS)
-			root_length = snprintf(root, sizeof(root), "%s/halo-og", data_home);
-			legacy_length = snprintf(legacy, sizeof(legacy), "%s/halo-linux", data_home);
-#else
 			snprintf(root, sizeof(root), "%s/halo-linux", data_home);
-#endif
-		}
 		else if (home && *home)
-		{
-#if !defined(HALO_ANDROID) && !defined(HALO_MACOS)
-			root_length = snprintf(root, sizeof(root), "%s/.local/share/halo-og", home);
-			legacy_length = snprintf(legacy, sizeof(legacy), "%s/.local/share/halo-linux", home);
-#else
 			snprintf(root, sizeof(root), "%s/.local/share/halo-linux", home);
-#endif
-		}
 		else
 			snprintf(root, sizeof(root), "%s", platform_data_root());
 		trim_separators(root);
-#if !defined(HALO_ANDROID) && !defined(HALO_MACOS)
-		if (legacy[0])
-		{
-			int migrated;
-
-			trim_separators(legacy);
-			if (root_length < 0 || (size_t)root_length >= sizeof(root) ||
-				legacy_length < 0 || (size_t)legacy_length >= sizeof(legacy))
-			{
-				platform_log("save migration: default path exceeds the port's path limit; keeping legacy %s", legacy);
-				snprintf(root, sizeof(root), "%s", legacy);
-			}
-			else if ((migrated = posix_migrate_save_directory(legacy, root)) < 0)
-			{
-				platform_log("save migration: could not copy %s to %s (%s); keeping legacy saves", legacy, root, strerror(errno));
-				snprintf(root, sizeof(root), "%s", legacy);
-			}
-			else if (migrated == 0)
-				platform_log("save migration: copied %s to %s; original and existing destination files preserved", legacy, root);
-		}
-#endif
 		make_directories(root);
 		platform_log("save root: %s", root);
 	}

@@ -283,6 +283,7 @@ symbols in this file:
 /* port: port/linux/game/network_objects.c's (a client deletes the host's
 objects on the host's word alone) */
 boolean network_objects_may_delete(long object_index);
+void unit_eject_flipped_riders(long vehicle_index);
 
 /* port: an unarmed player's melee's length, in ticks (a weapon's is about
 this: its first person melee animation, sped up a quarter) */
@@ -3372,6 +3373,15 @@ static void biped_update_turning(
 			biped->unit.player_index!=NONE &&
 			biped->unit.animation.state==_unit_state_throw_grenade &&
 			unit_animation_enhanced(biped_index);
+		/* port: and a player in the air turns with the aim, as one running
+		does: the original never turned the airborne state, and clipped the
+		aim to its aiming screen about the body left facing where the jump
+		began, so a shot after a turn in the air missed the crosshair
+		(game.enhanced_animations: unit_animation_enhanced) */
+		boolean airborne_turn =
+			biped->unit.player_index!=NONE &&
+			biped->unit.animation.state==_unit_state_airborne &&
+			unit_animation_enhanced(biped_index);
 		real_vector3d turn_axis;
 		real turn_error;
 		real facing_alignment;
@@ -3436,7 +3446,8 @@ static void biped_update_turning(
 
 		if (biped->biped.state==biped_state_moving ||
 			TEST_FLAG(flags, _biped_turns_without_animating_bit) ||
-			throwing_turn)
+			throwing_turn ||
+			airborne_turn)
 		{
 			if (!TEST_FLAG(biped->unit.control_flags, _unit_control_look_dont_turn_bit))
 			{
@@ -4256,18 +4267,13 @@ boolean biped_update(
 
 		if (parent->object.type==_object_type_vehicle)
 		{
-			struct unit_datum *vehicle = vehicle_get(biped->object.parent_object_index);
-
 			biped_vehicle_speech(biped_index);
 			if (TEST_FLAG(biped->unit.control_flags, _unit_control_action_bit))
 				unit_try_and_exit_seat(biped_index);
 
-			if (rider_ejection &&
-				vehicle->object.up.k<0.f &&
-				TEST_FLAG(vehicle->object.flags, _object_on_ground_bit))
-			{
-				unit_exit_seat_end(biped_index);
-			}
+			/* port: the host keeps this seat unless its own vehicle lands
+			on its side or its roof, or the rider's machine says it already did */
+			unit_eject_flipped_riders(biped->object.parent_object_index);
 		}
 		else if (parent->object.type==_object_type_biped)
 		{

@@ -5,7 +5,8 @@ tools/title_assets.py), their controller button icons (port/assets/buttons,
 made by tools/button_assets.py), the fonts the text is drawn with
 (port/assets/fonts), the menus' files (port/assets/menus, made by
 tools/ce_menus.py) and SMAA's shader and lookup textures
-(port/third_party/smaa) in the game as C data:
+(port/third_party/smaa), and the headphone responses
+(port/assets/hrtf/sadie_d2_48k.hrtf) in the game as C data:
 
     python tools/embed_assets.py OUTPUT.c
 
@@ -49,7 +50,11 @@ SMAA_ASSETS = Path("port/third_party/smaa")
 SMAA_FILES = (("SMAA.hlsl", "xgpu_smaa_shader"), ("area_tex.zlib", "xgpu_smaa_area_texture"),
               ("search_tex.zlib", "xgpu_smaa_search_texture"))
 # the desktop windows' icon (tools/app_icon.py; port/linux/src/sdl_platform.c)
-WINDOW_ICON = Path("port/assets/icon/corece-icon-256.png")
+WINDOW_ICON = Path("port/assets/icon/opence-icon-256.png")
+# headphone responses for 3D voices (port/linux/src/dsound_sdl.c, tools/hrtf_assets.py)
+HRTF_ASSET = Path("port/assets/hrtf/sadie_d2_48k.hrtf")
+# the training pad, respawn meshes, and timer recordings (hardcore_assets.c)
+HARDCORE_ASSETS = Path("port/assets/hardcore")
 PNG_SIGNATURE = b"\x89PNG\r\n\x1a\n"
 
 
@@ -85,6 +90,14 @@ def smaa_files() -> List[tuple]:
     return [(name, symbol) for name, symbol in SMAA_FILES if (ROOT / SMAA_ASSETS / name).is_file()]
 
 
+def hardcore_files() -> List[Path]:
+    """The training pad, each map's respawn mesh, and each timer recording."""
+    root = ROOT / HARDCORE_ASSETS
+    if not root.is_dir():
+        return []
+    return sorted(path for path in root.rglob("*") if path.is_file() and path.suffix in (".txt", ".wav"))
+
+
 def hud_asset_inputs() -> List[Path]:
     """The files the generated source is made from."""
     inputs = [listing for listing in (LAYOUT, CUSTOM_EDITION_HUD, TITLE_LIST, BUTTON_LIST, FONT_LIST, MENU_LIST)
@@ -92,7 +105,8 @@ def hud_asset_inputs() -> List[Path]:
     return [*inputs, *(folder / f"{asset['name']}.png" for folder, asset, _ in textures()),
             *(FONT_ASSETS / name for name in font_files()), *(MENU_ASSETS / name for name in menu_files()),
             *(SMAA_ASSETS / name for name, _ in smaa_files()),
-            *([WINDOW_ICON] if (ROOT / WINDOW_ICON).is_file() else [])]
+            *([WINDOW_ICON] if (ROOT / WINDOW_ICON).is_file() else []),
+            *([HRTF_ASSET] if (ROOT / HRTF_ASSET).is_file() else [])]
 
 
 def hud_configure_inputs() -> List[Path]:
@@ -106,6 +120,9 @@ def hud_configure_inputs() -> List[Path]:
             inputs += [folder, listing]
     if (ROOT / SMAA_ASSETS).is_dir():
         inputs.append(SMAA_ASSETS)
+    if (ROOT / HARDCORE_ASSETS).is_dir():
+        inputs.append(HARDCORE_ASSETS)
+        inputs += [HARDCORE_ASSETS / "areas", HARDCORE_ASSETS / "sounds"]
     return inputs
 
 
@@ -115,6 +132,66 @@ def words(data: bytes) -> List[str]:
     values = struct.unpack(f"<{len(padded) // 4}I", padded)
     return ["\t" + ", ".join(f"0x{word:08x}" for word in values[start:start + 8]) + ","
             for start in range(0, len(values), 8)]
+
+
+def hardcore_payload(path: Path) -> bytes:
+    """A wav is stored as it is. The marker and area text is compiled into the
+    bytes the game copies."""
+    if path.suffix == ".wav":
+        return path.read_bytes()
+    tool_dir = str(Path(__file__).resolve().parent)
+    if tool_dir not in sys.path:
+        sys.path.insert(0, tool_dir)
+    from hardcore_mesh import text_to_payload
+    return text_to_payload(path.read_text())
+
+
+def write_hardcore(output: Path) -> None:
+    """Each training file as the words hardcore_assets.c looks up. The guest's
+    assembly pass rewrites byte data, so the build keeps the files as words."""
+    files = hardcore_files()
+    payloads = [hardcore_payload(path) for path in files]
+    lines = [
+        "/* generated from port/assets/hardcore. do not edit. */",
+        "",
+        '#include "hardcore_assets.h"',
+        "",
+    ]
+    for index, payload in enumerate(payloads):
+        lines.append(f"static const unsigned int hardcore_asset_{index}[] = {{")
+        lines.extend(words(payload))
+        lines.append("};")
+        lines.append("")
+    lines.append("const struct hardcore_asset_embedded hardcore_assets_embedded[] =")
+    lines.append("{")
+    for index, (path, payload) in enumerate(zip(files, payloads)):
+        rel = path.relative_to(ROOT / HARDCORE_ASSETS).as_posix()
+        lines.append(f'\t{{ "{rel}", hardcore_asset_{index}, {len(payload)} }},')
+    if not files:
+        lines.append("\t{ 0 },")
+    lines.append("};")
+    lines.append(f"const unsigned int hardcore_assets_embedded_count = {len(files)};")
+    lines.append("")
+    output.parent.mkdir(parents=True, exist_ok=True)
+    text = "\n".join(lines) + "\n"
+    if not output.is_file() or output.read_text() != text:
+        output.write_text(text)
+
+
+def hardcore_assets_build(n: Any, prefix: str, output: Path) -> List[Path]:
+    """The training files, generated apart from the menus so a menu change
+    does not rebuild them."""
+    n.rule(
+        name=f"{prefix}_hardcore_assets",
+        command=f"$python tools/embed_assets.py --hardcore $out",
+        description=f"{prefix.upper()} TRAINING ASSETS $out",
+    )
+    n.build(
+        outputs=output,
+        rule=f"{prefix}_hardcore_assets",
+        implicit=[Path("tools/embed_assets.py"), Path("tools/hardcore_mesh.py"), *hardcore_files()],
+    )
+    return [output]
 
 
 def hud_assets_build(n: Any, prefix: str, output: Path) -> List[Path]:
@@ -143,6 +220,9 @@ def png_size(data: bytes, name: str) -> tuple:
 
 
 def main() -> None:
+    if len(sys.argv) == 3 and sys.argv[1] == "--hardcore":
+        write_hardcore(Path(sys.argv[2]))
+        return
     if len(sys.argv) != 2:
         sys.exit("usage: embed_assets.py OUTPUT.c")
     lines = [
@@ -253,6 +333,14 @@ def main() -> None:
     lines.append(f"const unsigned long platform_window_icon_size = {len(data)};")
     lines.append("")
     lines.append("#endif")
+    # headphone responses (dsound_sdl.c). Size 0 where the checkout has none:
+    # 3D voices stay on the stereo pan.
+    data = (ROOT / HRTF_ASSET).read_bytes() if (ROOT / HRTF_ASSET).is_file() else b""
+    lines.append("")
+    lines.append("const unsigned int dsound_hrtf_data[] = {")
+    lines.extend(words(data) if data else ["\t0,"])
+    lines.append("};")
+    lines.append(f"const unsigned long dsound_hrtf_data_size = {len(data)};")
     output = Path(sys.argv[1])
     output.parent.mkdir(parents=True, exist_ok=True)
     text = "\n".join(lines) + "\n"

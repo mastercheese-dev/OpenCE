@@ -1,4 +1,5 @@
 # macOS-only managed community-map services. Other hosts keep their existing ABI.
+host_https_get
 halo_map_download_directory
 halo_map_download_request
 halo_fork_update_notice
@@ -6,3 +7,4 @@ halo_fork_update_notice
 host_sdl_audio_device_count
 host_sdl_audio_device_name
 host_sdl_audio_device_id
+host_sdl_audio_stream_device_name

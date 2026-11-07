@@ -136,22 +136,48 @@ enum
 
 	/* The host's mouse aim-assist policy, reliably on ready and on change. */
 	_distributed_message_aim_assist_policy = 90,
+	/* OpenCE's messages 91 through 95. A host of that build sends them.
+	This build accepts the bytes and does not apply them. Its own messages
+	follow, so an OpenCE host drops them as unknown. */
+	_distributed_message_shield_effects = 91,
+	_distributed_message_client_build = 92,
+	_distributed_message_fire_origins = 93,
+	_distributed_message_map_vote = 94,
+	_distributed_message_map_vote_choice = 95,
 	/* a client has its players, the host's objects and the game type's
 	state. the host starts the match once every machine still in it has
 	said so (reliably, and only on that machine's stream) */
-	_distributed_message_match_ready = 91,
+	_distributed_message_match_ready = 96,
 	/* the host starts the fade. the update number is the host's next game
 	update when it said so, so a client that hears it late fades only for
 	what that update still has left (reliably) */
-	_distributed_message_match_go = 92,
-	/* a client tells the host whether Split Screen is on, so a pane of
-	that machine can stay black. a build that does not know it drops it. */
-	_distributed_message_screen_share = 93,
+	_distributed_message_match_go = 97,
+	/* a client tells the host whether Split Screen is on. a pane of that
+	machine stays black in matchmaking, and display.split_shared_only
+	leaves it out once the machine has said it is off. a build that does
+	not know the message drops it. */
+	_distributed_message_screen_share = 98,
 	/* the host tells every client each machine's answer */
-	_distributed_message_screen_share_down = 94,
+	_distributed_message_screen_share_down = 99,
 	/* the host tells which machines sat in this lobby or joined its link.
 	a filled matchmaking seat is not in the set. */
-	_distributed_message_screen_party = 95,
+	_distributed_message_screen_party = 100,
+	/* where a player's projectile went off (network_damage.c). The shooter's
+	machine tells the host, and the host tells every client, reliably, so
+	the blast is played there even when it hit nobody. A machine of version
+	36 hides another player's blast and waits for this. */
+	_distributed_message_blasts = 101,
+	/* a client's own player was thrown from a vehicle that landed upside
+	down. The host takes them out of that seat. The client says so each
+	tick until the host's unit state shows them out. A build that does not
+	know the message drops it. */
+	_distributed_message_ejection = 102,
+	/* the host's MODS choice (network_mods.c): allowed or not, reliably,
+	when a client is ready and when the choice changes. a client answers.
+	a machine that does not answer is dropped from a game that does not
+	allow mods. the network version stays as it is. */
+	_distributed_message_mods_policy = 103,
+	_distributed_message_mods_ack = 104,
 
 	NUMBER_OF_DISTRIBUTED_MESSAGES
 };
@@ -232,13 +258,16 @@ a longer message is split where a batch is full */
 unreliable ones gathered into one datagram a machine each tick */
 void distributed_send(void *message, byte type, short count, word size, short destination);
 void distributed_client_send_identity(void);
-/* matchmaking: tell the others whether this screen is shared, and which
-players joined the lobby rather than a filled seat. */
+/* a network game: tell the others whether this screen is shared. in
+matchmaking, also which players joined the lobby rather than a filled seat. */
 void distributed_screen_share_client_tick(void);
 void distributed_screen_share_host_tick(void);
 /* 1 when that machine's Split Screen is on. this machine reads its own
 setting. a machine that has not said is off. */
 int distributed_machine_shares_screen(short machine_index);
+/* 1 when that answer is this machine's own setting, or a message has
+given it. a machine that has not said is 0. */
+int distributed_machine_screen_share_known(short machine_index);
 /* the host's set of lobby machines, or the last set a client was told.
 bits is 16 bytes, one bit a machine index. known is 0 until the
 host has said, and 1 on the host. */
@@ -257,6 +286,14 @@ long distributed_player_from_byte(byte player_index);
 boolean distributed_player_is_local(long player_index);
 /* the player's living unit, or NONE */
 long distributed_living_unit(struct player_datum const *player);
+/* a client: its own player is leaving a vehicle that landed upside down.
+said before the local exit, and repeated until the host shows them out. */
+void network_distributed_note_ejection(long unit_index);
+/* a client: this vehicle is one its player was just thrown from, and the
+host's positions of it are not taken yet. */
+boolean network_distributed_ejected_vehicle(long vehicle_index);
+/* the host has that vehicle at rest, and this player out of it. */
+void network_distributed_ejected_vehicle_rested(long vehicle_index);
 /* whether the player is one of that client machine's (the host) */
 boolean distributed_machine_has_player(long machine_index, short player_index);
 void distributed_count_correction(void);
@@ -441,10 +478,17 @@ void network_damage_new_game(void);
 /* the host: a grenade a player's unit threw (units.c), whose damage that
 player's machine reports */
 void network_damage_note_grenade(long unit_index, short grenade_type);
+/* a projectile someone else fired: this machine does not play its blast */
+boolean network_projectile_hides_detonation(long owner_player_index);
+/* the shooter's machine: its projectile went off here. The host is told,
+and tells every other machine, which plays the blast even if it hit nobody. */
+void network_projectile_note_detonation(long owner_player_index, long effect_index,
+	real_point3d const *epicenter, short noise);
 void network_damage_host_tick(void);
 void network_damage_client_tick(void);
 void network_damage_handle_events(void const *entries, short count);
 void network_damage_handle_reports(long machine_index, void const *entries, short count);
+void network_damage_handle_blasts(long machine_index, void const *entries, short count);
 word network_damage_entry_size(byte type);
 
 #endif // __NETWORK_DISTRIBUTED_H

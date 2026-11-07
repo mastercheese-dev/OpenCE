@@ -14,6 +14,7 @@ Paths are UTF-8, as SDL gives them.
 #include <windows.h>
 #include <winhttp.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 #include "update.h"
@@ -229,4 +230,114 @@ int update_launch(const char *path)
 	CloseHandle(process.hThread);
 	CloseHandle(process.hProcess);
 	return 1;
+}
+
+/* the raw headers, "Name: value" lines, into headers. 0 if they do not fit */
+static int headers_keep(HINTERNET request, char *headers, int headers_capacity)
+{
+	wchar_t *wide = NULL;
+	DWORD bytes = 0, wide_count;
+	int length;
+
+	WinHttpQueryHeaders(request, WINHTTP_QUERY_RAW_HEADERS_CRLF, WINHTTP_HEADER_NAME_BY_INDEX, NULL, &bytes,
+		WINHTTP_NO_HEADER_INDEX);
+	if (GetLastError() != ERROR_INSUFFICIENT_BUFFER || bytes < sizeof(wchar_t))
+		return 0;
+	wide = malloc(bytes);
+	if (!wide || !WinHttpQueryHeaders(request, WINHTTP_QUERY_RAW_HEADERS_CRLF, WINHTTP_HEADER_NAME_BY_INDEX, wide,
+		&bytes, WINHTTP_NO_HEADER_INDEX))
+	{
+		free(wide);
+		return 0;
+	}
+	wide_count = bytes / sizeof(wchar_t);
+	if (wide_count && wide[wide_count - 1] == 0)
+		wide_count--;
+	length = WideCharToMultiByte(CP_UTF8, 0, wide, (int)wide_count, headers, headers_capacity - 1, NULL, NULL);
+	free(wide);
+	if (length <= 0)
+		return 0;
+	headers[length] = 0;
+	return 1;
+}
+
+int host_https_get(const char *url, int *status, char *headers, int headers_capacity, char *body, int body_capacity,
+	int *body_size)
+{
+	wchar_t wide_url[2048], host[256], url_path[2048];
+	URL_COMPONENTS components;
+	HINTERNET session = NULL, connection = NULL, request = NULL;
+	DWORD code = 0, code_size = sizeof(code);
+	DWORD protocols, read = 0;
+	int filled = 0, ok = 0;
+
+	if (status)
+		*status = 0;
+	if (body_size)
+		*body_size = 0;
+	if (headers && headers_capacity > 0)
+		headers[0] = 0;
+	if (!url || !status || !headers || headers_capacity < 2 || !body || body_capacity < 2 || !body_size ||
+		strncmp(url, "https://", 8) || !wide_from_utf8(url, wide_url, 2048))
+	{
+		return 0;
+	}
+	memset(&components, 0, sizeof(components));
+	components.dwStructSize = sizeof(components);
+	components.lpszHostName = host;
+	components.dwHostNameLength = 256;
+	components.lpszUrlPath = url_path;
+	components.dwUrlPathLength = 2048;
+	if (!WinHttpCrackUrl(wide_url, 0, 0, &components) || components.nScheme != INTERNET_SCHEME_HTTPS)
+		return 0;
+	session = WinHttpOpen(UPDATE_USER_AGENT, WINHTTP_ACCESS_TYPE_DEFAULT_PROXY, WINHTTP_NO_PROXY_NAME,
+		WINHTTP_NO_PROXY_BYPASS, 0);
+	if (!session)
+		goto done;
+	protocols = WINHTTP_FLAG_SECURE_PROTOCOL_TLS1_2 | WINHTTP_FLAG_SECURE_PROTOCOL_TLS1_3;
+	WinHttpSetOption(session, WINHTTP_OPTION_SECURE_PROTOCOLS, &protocols, sizeof(protocols));
+	WinHttpSetTimeouts(session, TIMEOUT_MILLISECONDS, TIMEOUT_MILLISECONDS, TIMEOUT_MILLISECONDS, TIMEOUT_MILLISECONDS);
+	connection = WinHttpConnect(session, host, components.nPort, 0);
+	if (!connection)
+		goto done;
+	request = WinHttpOpenRequest(connection, L"GET", url_path, NULL, WINHTTP_NO_REFERER, WINHTTP_DEFAULT_ACCEPT_TYPES,
+		WINHTTP_FLAG_SECURE);
+	if (!request || !WinHttpSendRequest(request, WINHTTP_NO_ADDITIONAL_HEADERS, 0, WINHTTP_NO_REQUEST_DATA, 0, 0, 0) ||
+		!WinHttpReceiveResponse(request, NULL) ||
+		!WinHttpQueryHeaders(request, WINHTTP_QUERY_STATUS_CODE | WINHTTP_QUERY_FLAG_NUMBER,
+			WINHTTP_HEADER_NAME_BY_INDEX, &code, &code_size, WINHTTP_NO_HEADER_INDEX))
+	{
+		goto done;
+	}
+	*status = (int)code;
+	if (!headers_keep(request, headers, headers_capacity))
+		goto done;
+	while (filled < body_capacity - 1)
+	{
+		if (!WinHttpReadData(request, body + filled, (DWORD)(body_capacity - 1 - filled), &read))
+			goto done;
+		if (!read)
+			break;
+		filled += (int)read;
+	}
+	if (read)
+	{
+		char extra;
+		DWORD more = 0;
+
+		/* (one more byte means the body did not fit) */
+		if (WinHttpReadData(request, &extra, 1, &more) && more)
+			goto done;
+	}
+	body[filled] = 0;
+	*body_size = filled;
+	ok = 1;
+done:
+	if (request)
+		WinHttpCloseHandle(request);
+	if (connection)
+		WinHttpCloseHandle(connection);
+	if (session)
+		WinHttpCloseHandle(session);
+	return ok;
 }

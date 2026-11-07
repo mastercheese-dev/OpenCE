@@ -607,6 +607,26 @@ posix_ulong posix_process_id(void)
 	return (posix_ulong)getpid();
 }
 
+#ifndef __ANDROID__
+/* The parent folders of the key file. */
+static int secret_make_parents(char *path)
+{
+	char *slash;
+
+	for (slash = path + 1; *slash; slash++)
+	{
+		if (*slash != '/')
+			continue;
+		*slash = '\0';
+		if (mkdir(path, 0700) != 0 && errno != EEXIST)
+			return -1;
+		*slash = '/';
+	}
+	return 0;
+}
+
+#endif
+
 int posix_user_secret(unsigned char *secret, int size)
 {
 #ifdef __ANDROID__
@@ -614,10 +634,12 @@ int posix_user_secret(unsigned char *secret, int size)
 	(void)size;
 	return 0;
 #else
-	/* in the user's runtime directory (theirs alone), else their home */
+	/* the same key file OpenCE reads: the user's runtime directory, else
+	their home */
 	const char *runtime = getenv("XDG_RUNTIME_DIR");
 	const char *home = getenv("HOME");
 	char path[1024];
+	char parent[1024];
 	int attempt;
 
 	if (runtime && *runtime)
@@ -625,6 +647,9 @@ int posix_user_secret(unsigned char *secret, int size)
 	else if (home && *home)
 		snprintf(path, sizeof(path), "%s/.halo-ce-universal.key", home);
 	else
+		return 0;
+	snprintf(parent, sizeof(parent), "%s", path);
+	if (secret_make_parents(parent) != 0)
 		return 0;
 	for (attempt = 0; attempt < 3; attempt++)
 	{

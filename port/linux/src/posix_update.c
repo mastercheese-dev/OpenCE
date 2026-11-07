@@ -309,6 +309,9 @@ static int connection_read(struct connection *connection, unsigned char *buffer,
 struct download
 {
 	FILE *file;
+	/* a body kept in memory (host_https_get), instead of a file */
+	char *memory;
+	unsigned long long memory_limit;
 	update_progress_proc progress;
 	void *context;
 	unsigned long long received, total;
@@ -319,6 +322,14 @@ struct download
 
 static int body_write(struct download *download, const unsigned char *data, size_t size)
 {
+	if (download->memory)
+	{
+		if (download->received + size > download->memory_limit)
+			return 0;
+		memcpy(download->memory + download->received, data, size);
+		download->received += size;
+		return 1;
+	}
 	if (download->received + size > MAXIMUM_DOWNLOAD_SIZE)
 		return 0;
 	if (fwrite(data, 1, size, download->file) != size)
@@ -475,6 +486,120 @@ static int https_get(const char *url, struct download *download, char *location,
 	}
 	connection_free(&connection);
 	return status;
+}
+
+/* the headers kept as "Name: value" lines. 0 if the buffer cannot hold them */
+static int header_keep(char *headers, int headers_capacity, int *used, const char *name, const char *value)
+{
+	int length = (int)strlen(name) + (int)strlen(value) + 3;
+
+	if (*used + length + 1 > headers_capacity)
+		return 0;
+	memcpy(headers + *used, name, strlen(name));
+	*used += (int)strlen(name);
+	headers[(*used)++] = ':';
+	headers[(*used)++] = ' ';
+	memcpy(headers + *used, value, strlen(value));
+	*used += (int)strlen(value);
+	headers[(*used)++] = '\n';
+	headers[*used] = 0;
+	return 1;
+}
+
+int host_https_get(const char *url, int *status, char *headers, int headers_capacity, char *body, int body_capacity,
+	int *body_size)
+{
+	struct connection connection;
+	struct download download;
+	char host[256], port[16], path[2048];
+	char request[3072];
+	char line[MAXIMUM_HEADER_SIZE];
+	char error[256];
+	unsigned long long length = 0;
+	int have_length = 0, chunked = 0, header_used = 0, code = 0;
+
+	if (status)
+		*status = 0;
+	if (body_size)
+		*body_size = 0;
+	if (headers && headers_capacity > 0)
+		headers[0] = 0;
+	if (!url || !status || !headers || headers_capacity < 2 || !body || body_capacity < 2 || !body_size ||
+		strncmp(url, "https://", 8))
+	{
+		return 0;
+	}
+	pthread_once(&certificates_once, load_certificates);
+	if (!crypto_ready || !certificates_loaded || !parse_url(url, host, sizeof(host), port, sizeof(port), path,
+		sizeof(path)))
+	{
+		return 0;
+	}
+	memset(&connection, 0, sizeof(connection));
+	if (!connection_open(&connection, host, port, error, sizeof(error)))
+	{
+		connection_free(&connection);
+		return 0;
+	}
+	snprintf(request, sizeof(request),
+		"GET %s HTTP/1.1\r\nHost: %s\r\nUser-Agent: " UPDATE_USER_AGENT "\r\n"
+		"Accept: */*\r\nConnection: close\r\n\r\n",
+		path, host);
+	if (!connection_write(&connection, request, strlen(request)) ||
+		!connection_read_line(&connection, line, sizeof(line)) || sscanf(line, "HTTP/%*d.%*d %d", &code) != 1)
+	{
+		connection_free(&connection);
+		return 0;
+	}
+	*status = code;
+	for (;;)
+	{
+		char *value;
+
+		if (!connection_read_line(&connection, line, sizeof(line)))
+		{
+			connection_free(&connection);
+			return 0;
+		}
+		if (!line[0])
+			break;
+		value = strchr(line, ':');
+		if (!value)
+			continue;
+		*value++ = 0;
+		value += strspn(value, " \t");
+		if (!strcasecmp(line, "Content-Length"))
+		{
+			length = strtoull(value, NULL, 10);
+			have_length = 1;
+		}
+		else if (!strcasecmp(line, "Transfer-Encoding") && strcasestr(value, "chunked"))
+		{
+			chunked = 1;
+		}
+		if (!header_keep(headers, headers_capacity, &header_used, line, value))
+		{
+			connection_free(&connection);
+			return 0;
+		}
+	}
+	if (have_length && !chunked && length > (unsigned long long)(body_capacity - 1))
+	{
+		connection_free(&connection);
+		return 0;
+	}
+	memset(&download, 0, sizeof(download));
+	download.memory = body;
+	download.memory_limit = (unsigned long long)(body_capacity - 1);
+	if (!read_body(&connection, &download, chunked, length, have_length && !chunked))
+	{
+		connection_free(&connection);
+		return 0;
+	}
+	body[download.received] = 0;
+	*body_size = (int)download.received;
+	connection_free(&connection);
+	return 1;
 }
 
 int update_download(const char *url, const char *path, update_progress_proc progress, void *context, char *error,

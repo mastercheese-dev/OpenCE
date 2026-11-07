@@ -84,12 +84,12 @@ int posix_register_url_scheme(const char *scheme, const char *description)
 int posix_user_secret(unsigned char *secret, int size)
 {
 	/* in the user's local application data, which only they (and the
-	system's administrators) can read */
+	system's administrators) can read, the same key file OpenCE uses */
 	char directory[MAX_PATH], path[MAX_PATH + 64];
 	DWORD length = GetEnvironmentVariableA("LOCALAPPDATA", directory, sizeof(directory));
 	int attempt;
 
-	if (!length || length >= sizeof(directory))
+	if (!length || length >= sizeof(directory) || size <= 0)
 		return 0;
 	snprintf(path, sizeof(path), "%s\\halo-ce-universal.key", directory);
 	for (attempt = 0; attempt < 3; attempt++)

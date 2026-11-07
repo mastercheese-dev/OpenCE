@@ -56,7 +56,7 @@ enum
 
 typedef char p2p_listing_invite_size_assert[P2P_LISTING_INVITE_SIZE == P2P_LINK_SIZE ? 1 : -1];
 
-/* CoreCE's public lobby. A key hash in hex follows the slot prefix. The
+/* OpenCE's public lobby. A key hash in hex follows the slot prefix. The
 query topic asks hosts to publish again (p2p_lobby.c). Listings and
 invites both use hceu/3/, which is the tree the broker relays. */
 #define P2P_LOBBY_SLOT_PREFIX "hceu/3/lobby/s/"
@@ -355,6 +355,9 @@ int p2p_lobby_browsing(void);
 /* a message on a slot (its key hash in hex) through a broker; retained: the
 slot's retained copy, sent on subscribing */
 void p2p_lobby_slot_heard(const char *hash_text, const unsigned char *payload, int size, int retained);
+/* a dedicated server's listing from a master server (master_list.c): taken
+like one heard on the brokers, and marked dedicated. 1 if the browser kept it */
+int p2p_lobby_take_master_listing(const unsigned char *payload, int size, int dedicated);
 /* a query was heard */
 void p2p_lobby_query_heard(void);
 /* a probe of a host (its identifier) ended: its ping in milliseconds, -1 if
