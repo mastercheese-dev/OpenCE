@@ -5705,6 +5705,7 @@ enum
 {
 	BROWSER_SORT_NONE = 0,
 	BROWSER_SORT_LOCKED,
+	BROWSER_SORT_DEDICATED,
 	BROWSER_SORT_NAME,
 	BROWSER_SORT_MAP,
 	BROWSER_SORT_TYPE,
@@ -5769,7 +5770,15 @@ static boolean browser_initialize(struct widget_instance *screen, struct event_r
 	}
 	visible_set(named(screen, "scroll_up_button", 0), FALSE);
 	visible_set(named(screen, "scroll_down_button", 0), FALSE);
-	visible_set(named(screen, "op_sort_header_dedicated", 0), FALSE);
+	visible_set(named(screen, "op_sort_header_dedicated", 0),
+		multiplayer.mode == _multiplayer_mode_server_browser);
+	{
+		struct widget_instance *dedicated = named(screen, "sort_header_dedicated", 0);
+
+		/* (its first frame is empty; the icon is the next, in the menus' blue) */
+		if (dedicated)
+			dedicated->animation.current_frame_index = 1;
+	}
 	visible_set(named(screen, "op_sort_header_classic", 0), FALSE);
 	visible_set(named(screen, "ticker_player_info_label", 0), FALSE);
 	visible_set(named(screen, "ticker_rules_info_label", 0), FALSE);
@@ -6119,6 +6128,8 @@ static short browser_sort_column_of(struct widget_instance *widget)
 			return BROWSER_SORT_PING;
 		if (!strcmp(suffix, "locked"))
 			return BROWSER_SORT_LOCKED;
+		if (!strcmp(suffix, "dedicated"))
+			return BROWSER_SORT_DEDICATED;
 	}
 	return BROWSER_SORT_NONE;
 }
@@ -6194,6 +6205,9 @@ static int browser_listing_rank(struct p2p_listing const *left, struct p2p_listi
 	{
 	case BROWSER_SORT_LOCKED:
 		cmp = (left->locked != 0) - (right->locked != 0);
+		break;
+	case BROWSER_SORT_DEDICATED:
+		cmp = (left->dedicated != 0) - (right->dedicated != 0);
 		break;
 	case BROWSER_SORT_NAME:
 		cmp = browser_text_cmp(left->name, right->name);
@@ -6524,17 +6538,20 @@ static void lobby_browser_update(struct widget_instance *list)
 		usnprintf(text, ROW_TEXT_LENGTH - 1, L"%d", game->ping);
 		text_set(named(row, "server_item_ping", 0), game->failed ? L"FAILED" : game->ping >= 0 ? text :
 			!game->open ? L"CLOSED" : game->in_progress ? L"LIVE" : L"-");
-		/* (the lock: a game with a password. Its bitmap's first frame is
-		empty, the PC version's for no lock; the next is the lock, in the
-		menus' blue) */
+		/* (the lock, and a dedicated server: CE's own icon. Each bitmap's
+		first frame is empty, the PC version's for none; the next is the
+		icon, in the menus' blue) */
 		{
 			struct widget_instance *lock = named(row, "server_item_locked", 0);
+			struct widget_instance *dedicated = named(row, "server_item_dedicated", 0);
 
 			visible_set(lock, game->locked);
 			if (lock)
 				lock->animation.current_frame_index = 1;
+			visible_set(dedicated, game->dedicated);
+			if (dedicated)
+				dedicated->animation.current_frame_index = 1;
 		}
-		visible_set(named(row, "server_item_dedicated", 0), FALSE);
 		visible_set(named(row, "server_item_classic", 0), FALSE);
 	}
 	/* joining: once the host is reached, its game joined (by an A press, on

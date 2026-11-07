@@ -1,4 +1,5 @@
 # macOS-only managed community-map services. Other hosts keep their existing ABI.
+host_https_get
 halo_map_download_directory
 halo_map_download_request
 halo_fork_update_notice

@@ -481,9 +481,10 @@ its name alone beside it, has its name given back as the map lists find it.
   their version (`cache_files_map_present`), or one whose resource maps it
   lacks, asks the host over its connection
   (`_distributed_message_map_share_request`: the level, and which of the
-  map, bitmaps.map, sounds.map and loc.map it lacks) instead of leaving, if
-  `network.map_download` lets it. Its players wait to join until the host's settings
-  have named the map, and for a game in progress until it is downloaded; in
+  map, bitmaps.map, sounds.map and loc.map it lacks) instead of leaving.
+  The host sends the map when that host shares maps. Its players wait to
+  join until the host's settings have named the map, and for a game in
+  progress until it is downloaded; in
   the lobby they join at once. A host that starts while a machine is still
   downloading starts the others without it: the machine's players are held
   out of the game, and so is any player it asks for meanwhile (a machine

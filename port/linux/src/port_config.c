@@ -566,11 +566,11 @@ static const struct config_setting config_settings[] =
 		_platform_all,
 		"Playing in another's game: the most kilobytes a second this machine\n"
 		"sends of maps to other players (16 to 10240: 10 MB/s)." },
-	{ "network.map_download", _config_boolean, "false", "HALO_NET_MAP_DOWNLOAD", _environment_value, _platform_all,
+	{ "network.map_download", _config_boolean, "true", "HALO_NET_MAP_DOWNLOAD", _environment_value, _platform_all,
 		"Joining a game on a Custom Edition map this machine does not have:\n"
-		"download it (and the resource maps it needs) from the game's players\n"
-		"into custom_maps, if its host shares it (network.map_share); false\n"
-		"leaves the game, saying which map is missing." },
+		"the game asks the host for the map (and the resource maps it needs).\n"
+		"The host sends it when that host shares maps (network.map_share). A\n"
+		"saved false does not stop the ask." },
 	{ "network.coop_public", _config_boolean, "false", "HALO_NET_COOP_PUBLIC", _environment_value, _platform_all,
 		"Whether an online co-op game (Create Game > Internet, a SINGLEPLAYER\n"
 		"map) starts as PUBLIC or, false, PRIVATE: Server Setup's LISTING in\n"
@@ -629,6 +629,12 @@ static const struct config_setting config_settings[] =
 		"invite find each other (its messages are encrypted), beside this file\n"
 		"unless a full path: one host:port on each line, up to 4. Updates\n"
 		"replace brokers.txt: keep a list of your own under another name." },
+	{ "network.masters_file", _config_string, "\"masters.txt\"",
+		"HALO_NET_MASTERS_FILE", _environment_value, _platform_all,
+		"The master servers the server browser asks for dedicated servers,\n"
+		"beside this file unless a full path: an https:// address and its\n"
+		"ed25519: key on each line, up to 4. A file that names none leaves\n"
+		"the official master." },
 	{ "network.stun_servers", _config_string, "\"stun.l.google.com:19302,stun.cloudflare.com:3478\"",
 		"HALO_NET_STUN", _environment_value, _platform_all,
 		"Public STUN servers that tell this machine its internet address;\n"

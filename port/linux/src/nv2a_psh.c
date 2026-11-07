@@ -986,7 +986,16 @@ static BOOL msl_key_supported(const struct nv2a_pixel_shader_key *key,
 	for (stage = 0; stage < 4; stage++)
 	{
 		unsigned long mode = stage_mode(key, stage);
-		BOOL samples = mode_samples_texture(mode);
+		BOOL samples;
+
+		/* An unbound stage does not sample. texture_stage writes opaque
+		black for that stage, so the checks below see no texture operation.
+		Passthru, clip plane, dot product, and DOT_ZW stay as they are. */
+		if (key->sampler_type[stage] == _xgpu_sampler_none &&
+			mode != _mode_passthru && mode != _mode_clipplane &&
+			mode != _mode_dot_product && mode != _mode_dot_zw)
+			mode = _mode_none;
+		samples = mode_samples_texture(mode);
 		if (mode >= _mode_dot_reflect_specular_constant || mode == _mode_brdf ||
 			(mode == _mode_dot_zw && (!options ||
 			options->depth_contract != XGPU_MSL_DEPTH_RAW_D24)) ||

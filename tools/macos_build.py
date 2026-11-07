@@ -120,7 +120,8 @@ def build_host(update_build):
         sources = [source for source in sources if source.name not in ("host_gl.c", "host_gl_bridge.c", "host_perf.c")]
     sources += sorted((ROOT / "port/macos/host").glob("*.mm"))
     sources += sorted((ROOT / "port/macos/native").glob("*.m"))
-    sources += [ROOT / "port/linux/src/xiso.c", ROOT / "port/linux/src/posix_dtls.c"]
+    sources += [ROOT / "port/linux/src/xiso.c", ROOT / "port/linux/src/posix_dtls.c",
+                ROOT / "port/linux/src/posix_update.c"]
     sources += miniupnpc_sources()
     sources += sorted((mbedtls / "library").glob("*.c"))
     sources += [BUILD / "host/host_import_table.c", ROOT / "port/macos/host/entry.s"]
@@ -131,7 +132,7 @@ def build_host(update_build):
         if source.suffix == ".mm":
             native_flags += ["-std=c++17"]
         quiet = ["-w"] if source.is_relative_to(mbedtls) else []
-        dtls_includes = [f"-I{mbedtls / 'include'}"] if source.name == "posix_dtls.c" or source.is_relative_to(mbedtls) else []
+        dtls_includes = [f"-I{mbedtls / 'include'}"] if source.name in ("posix_dtls.c", "posix_update.c") or source.is_relative_to(mbedtls) else []
         library_include = [f"-I{mbedtls / 'library'}"] if source.is_relative_to(mbedtls) else []
         compiler = "clang++" if source.suffix == ".mm" else "clang"
         run(compiler, *flags, *native_flags, *quiet, *dtls_includes, *library_include, "-c", source, "-o", obj)

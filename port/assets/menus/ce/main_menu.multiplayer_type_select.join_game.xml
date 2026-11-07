@@ -197,7 +197,7 @@
 		<on event="left_mouse" run="mouse emit accept event"/>
 		<on event="double_click" run="gamespy select item"/>
 		<child widget="main_menu/multiplayer_type_select/join_game/server_item_locked" x="10" y="2"/>
-		<child widget="main_menu/multiplayer_type_select/join_game/server_item_dedicated"/>
+		<child widget="main_menu/multiplayer_type_select/join_game/server_item_dedicated" y="2"/>
 		<child widget="main_menu/multiplayer_type_select/join_game/server_item_server_name" x="30"/>
 		<child widget="main_menu/multiplayer_type_select/join_game/server_item_map" x="180"/>
 		<child widget="main_menu/multiplayer_type_select/join_game/server_item_classic"/>
@@ -211,7 +211,7 @@
 		<on event="left_mouse" run="mouse emit accept event"/>
 		<on event="double_click" run="gamespy select item"/>
 		<child widget="main_menu/multiplayer_type_select/join_game/server_item_locked" x="10" y="2"/>
-		<child widget="main_menu/multiplayer_type_select/join_game/server_item_dedicated"/>
+		<child widget="main_menu/multiplayer_type_select/join_game/server_item_dedicated" y="2"/>
 		<child widget="main_menu/multiplayer_type_select/join_game/server_item_server_name" x="30"/>
 		<child widget="main_menu/multiplayer_type_select/join_game/server_item_map" x="180"/>
 		<child widget="main_menu/multiplayer_type_select/join_game/server_item_classic"/>
@@ -225,7 +225,7 @@
 		<on event="left_mouse" run="mouse emit accept event"/>
 		<on event="double_click" run="gamespy select item"/>
 		<child widget="main_menu/multiplayer_type_select/join_game/server_item_locked" x="10" y="2"/>
-		<child widget="main_menu/multiplayer_type_select/join_game/server_item_dedicated"/>
+		<child widget="main_menu/multiplayer_type_select/join_game/server_item_dedicated" y="2"/>
 		<child widget="main_menu/multiplayer_type_select/join_game/server_item_server_name" x="30"/>
 		<child widget="main_menu/multiplayer_type_select/join_game/server_item_map" x="180"/>
 		<child widget="main_menu/multiplayer_type_select/join_game/server_item_classic"/>
@@ -239,7 +239,7 @@
 		<on event="left_mouse" run="mouse emit accept event"/>
 		<on event="double_click" run="gamespy select item"/>
 		<child widget="main_menu/multiplayer_type_select/join_game/server_item_locked" x="10" y="2"/>
-		<child widget="main_menu/multiplayer_type_select/join_game/server_item_dedicated"/>
+		<child widget="main_menu/multiplayer_type_select/join_game/server_item_dedicated" y="2"/>
 		<child widget="main_menu/multiplayer_type_select/join_game/server_item_server_name" x="30"/>
 		<child widget="main_menu/multiplayer_type_select/join_game/server_item_map" x="180"/>
 		<child widget="main_menu/multiplayer_type_select/join_game/server_item_classic"/>
@@ -253,7 +253,7 @@
 		<on event="left_mouse" run="mouse emit accept event"/>
 		<on event="double_click" run="gamespy select item"/>
 		<child widget="main_menu/multiplayer_type_select/join_game/server_item_locked" x="10" y="2"/>
-		<child widget="main_menu/multiplayer_type_select/join_game/server_item_dedicated"/>
+		<child widget="main_menu/multiplayer_type_select/join_game/server_item_dedicated" y="2"/>
 		<child widget="main_menu/multiplayer_type_select/join_game/server_item_server_name" x="30"/>
 		<child widget="main_menu/multiplayer_type_select/join_game/server_item_map" x="180"/>
 		<child widget="main_menu/multiplayer_type_select/join_game/server_item_classic"/>
@@ -267,7 +267,7 @@
 		<on event="left_mouse" run="mouse emit accept event"/>
 		<on event="double_click" run="gamespy select item"/>
 		<child widget="main_menu/multiplayer_type_select/join_game/server_item_locked" x="10" y="2"/>
-		<child widget="main_menu/multiplayer_type_select/join_game/server_item_dedicated"/>
+		<child widget="main_menu/multiplayer_type_select/join_game/server_item_dedicated" y="2"/>
 		<child widget="main_menu/multiplayer_type_select/join_game/server_item_server_name" x="30"/>
 		<child widget="main_menu/multiplayer_type_select/join_game/server_item_map" x="180"/>
 		<child widget="main_menu/multiplayer_type_select/join_game/server_item_classic"/>
@@ -281,7 +281,7 @@
 		<on event="left_mouse" run="mouse emit accept event"/>
 		<on event="double_click" run="gamespy select item"/>
 		<child widget="main_menu/multiplayer_type_select/join_game/server_item_locked" x="10" y="2"/>
-		<child widget="main_menu/multiplayer_type_select/join_game/server_item_dedicated"/>
+		<child widget="main_menu/multiplayer_type_select/join_game/server_item_dedicated" y="2"/>
 		<child widget="main_menu/multiplayer_type_select/join_game/server_item_server_name" x="30"/>
 		<child widget="main_menu/multiplayer_type_select/join_game/server_item_map" x="180"/>
 		<child widget="main_menu/multiplayer_type_select/join_game/server_item_classic"/>
@@ -295,7 +295,7 @@
 		<on event="left_mouse" run="mouse emit accept event"/>
 		<on event="double_click" run="gamespy select item"/>
 		<child widget="main_menu/multiplayer_type_select/join_game/server_item_locked" x="10" y="2"/>
-		<child widget="main_menu/multiplayer_type_select/join_game/server_item_dedicated"/>
+		<child widget="main_menu/multiplayer_type_select/join_game/server_item_dedicated" y="2"/>
 		<child widget="main_menu/multiplayer_type_select/join_game/server_item_server_name" x="30"/>
 		<child widget="main_menu/multiplayer_type_select/join_game/server_item_map" x="180"/>
 		<child widget="main_menu/multiplayer_type_select/join_game/server_item_classic"/>
@@ -309,7 +309,7 @@
 		<on event="left_mouse" run="mouse emit accept event"/>
 		<on event="double_click" run="gamespy select item"/>
 		<child widget="main_menu/multiplayer_type_select/join_game/server_item_locked" x="10" y="2"/>
-		<child widget="main_menu/multiplayer_type_select/join_game/server_item_dedicated"/>
+		<child widget="main_menu/multiplayer_type_select/join_game/server_item_dedicated" y="2"/>
 		<child widget="main_menu/multiplayer_type_select/join_game/server_item_server_name" x="30"/>
 		<child widget="main_menu/multiplayer_type_select/join_game/server_item_map" x="180"/>
 		<child widget="main_menu/multiplayer_type_select/join_game/server_item_classic"/>
@@ -323,7 +323,7 @@
 		<on event="left_mouse" run="mouse emit accept event"/>
 		<on event="double_click" run="gamespy select item"/>
 		<child widget="main_menu/multiplayer_type_select/join_game/server_item_locked" x="10" y="2"/>
-		<child widget="main_menu/multiplayer_type_select/join_game/server_item_dedicated"/>
+		<child widget="main_menu/multiplayer_type_select/join_game/server_item_dedicated" y="2"/>
 		<child widget="main_menu/multiplayer_type_select/join_game/server_item_server_name" x="30"/>
 		<child widget="main_menu/multiplayer_type_select/join_game/server_item_map" x="180"/>
 		<child widget="main_menu/multiplayer_type_select/join_game/server_item_classic"/>
@@ -337,7 +337,7 @@
 		<on event="left_mouse" run="mouse emit accept event"/>
 		<on event="double_click" run="gamespy select item"/>
 		<child widget="main_menu/multiplayer_type_select/join_game/server_item_locked" x="10" y="2"/>
-		<child widget="main_menu/multiplayer_type_select/join_game/server_item_dedicated"/>
+		<child widget="main_menu/multiplayer_type_select/join_game/server_item_dedicated" y="2"/>
 		<child widget="main_menu/multiplayer_type_select/join_game/server_item_server_name" x="30"/>
 		<child widget="main_menu/multiplayer_type_select/join_game/server_item_map" x="180"/>
 		<child widget="main_menu/multiplayer_type_select/join_game/server_item_classic"/>
@@ -351,7 +351,7 @@
 		<on event="left_mouse" run="mouse emit accept event"/>
 		<on event="double_click" run="gamespy select item"/>
 		<child widget="main_menu/multiplayer_type_select/join_game/server_item_locked" x="10" y="2"/>
-		<child widget="main_menu/multiplayer_type_select/join_game/server_item_dedicated"/>
+		<child widget="main_menu/multiplayer_type_select/join_game/server_item_dedicated" y="2"/>
 		<child widget="main_menu/multiplayer_type_select/join_game/server_item_server_name" x="30"/>
 		<child widget="main_menu/multiplayer_type_select/join_game/server_item_map" x="180"/>
 		<child widget="main_menu/multiplayer_type_select/join_game/server_item_classic"/>
@@ -365,7 +365,7 @@
 		<on event="left_mouse" run="mouse emit accept event"/>
 		<on event="double_click" run="gamespy select item"/>
 		<child widget="main_menu/multiplayer_type_select/join_game/server_item_locked" x="10" y="2"/>
-		<child widget="main_menu/multiplayer_type_select/join_game/server_item_dedicated"/>
+		<child widget="main_menu/multiplayer_type_select/join_game/server_item_dedicated" y="2"/>
 		<child widget="main_menu/multiplayer_type_select/join_game/server_item_server_name" x="30"/>
 		<child widget="main_menu/multiplayer_type_select/join_game/server_item_map" x="180"/>
 		<child widget="main_menu/multiplayer_type_select/join_game/server_item_classic"/>
@@ -379,7 +379,7 @@
 		<on event="left_mouse" run="mouse emit accept event"/>
 		<on event="double_click" run="gamespy select item"/>
 		<child widget="main_menu/multiplayer_type_select/join_game/server_item_locked" x="10" y="2"/>
-		<child widget="main_menu/multiplayer_type_select/join_game/server_item_dedicated"/>
+		<child widget="main_menu/multiplayer_type_select/join_game/server_item_dedicated" y="2"/>
 		<child widget="main_menu/multiplayer_type_select/join_game/server_item_server_name" x="30"/>
 		<child widget="main_menu/multiplayer_type_select/join_game/server_item_map" x="180"/>
 		<child widget="main_menu/multiplayer_type_select/join_game/server_item_classic"/>
@@ -393,7 +393,7 @@
 		<on event="left_mouse" run="mouse emit accept event"/>
 		<on event="double_click" run="gamespy select item"/>
 		<child widget="main_menu/multiplayer_type_select/join_game/server_item_locked" x="10" y="2"/>
-		<child widget="main_menu/multiplayer_type_select/join_game/server_item_dedicated"/>
+		<child widget="main_menu/multiplayer_type_select/join_game/server_item_dedicated" y="2"/>
 		<child widget="main_menu/multiplayer_type_select/join_game/server_item_server_name" x="30"/>
 		<child widget="main_menu/multiplayer_type_select/join_game/server_item_map" x="180"/>
 		<child widget="main_menu/multiplayer_type_select/join_game/server_item_classic"/>

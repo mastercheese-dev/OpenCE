@@ -113,9 +113,9 @@ boolean map_share_map_version(
 host's `version`, map_share_hash_version's) that this machine cannot play
 (custom_edition_cache_present said why in `message`): TRUE if it asks the
 host for it instead (a Custom Edition map of a version it lacks, or one
-whose resource maps are missing, with network.map_download on). The download
-runs in the lobby (the host waits for it to precache), or, for a game in
-progress, before this machine's players join. */
+whose resource maps are missing). The host sends it when that host shares
+maps. The download runs in the lobby (the host waits for it to precache),
+or, for a game in progress, before this machine's players join. */
 /* the next map_share_download_begin may run even when network.map_download
 is off. one call, then it is off again */
 void map_share_download_permit(

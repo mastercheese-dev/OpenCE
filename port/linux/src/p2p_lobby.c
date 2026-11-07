@@ -23,7 +23,9 @@ false details:
 	"opence-lobby-1" and all before it. OpenCE signs the same listing with
 	"hceu-lobby-1". Those are shown too, whatever network version they name,
 	so an OpenCE public game appears in this server browser. This build
-	signs its own listings with "opence-lobby-1".
+	signs its own listings with "opence-lobby-1". A dedicated server is
+	not on these brokers. The browser asks the master servers for those
+	(master_list.c) and shows each one whose host signed its listing.
 
 Each host has a slot, hceu/3/lobby/s/<its key's hash in hex>: its listing,
 retained on every broker (and expiring there after LISTING_EXPIRY seconds
@@ -66,6 +68,7 @@ game with a password is not: its token is sealed.
 #include "port_config.h"
 #include "p2p_internal.h"
 #include "halo_port_limits.h"
+#include "master_list.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -148,6 +151,10 @@ struct game
 	int ping;
 	int probing;
 	unsigned long probed_time;
+	/* heard from a master server, and when; dedicated is that list's word */
+	int master;
+	int master_dedicated;
+	unsigned long master_time;
 };
 
 struct tombstone
@@ -683,6 +690,8 @@ static void listing_take(const struct queued *queued, const struct listing *list
 	shown->in_progress = (listing->flags & _listing_in_progress) != 0;
 	shown->has_teams = (listing->flags & _listing_has_teams) != 0;
 	shown->version = (unsigned short)listing->version;
+	/* (a broker listing does not say dedicated: a master server's word does) */
+	shown->dedicated = (unsigned char)game->master_dedicated;
 }
 
 /* the hosts' pings: those not known lately probed, while there is room (a
@@ -696,7 +705,8 @@ static void update_probes(void)
 	{
 		struct game *game = &lobby.games[index];
 
-		if (!game->used || !game->has_token || game->probing ||
+		/* (a master server's game is not probed: the list is enough to join it) */
+		if (!game->used || !game->has_token || game->probing || game->master ||
 			(game->probed_time && !elapsed(game->probed_time, PROBE_REFRESH)))
 		{
 			continue;
@@ -790,6 +800,13 @@ static void update_browsing(void)
 	{
 		if (lobby.games[index].used && elapsed(lobby.games[index].heard_time, GAME_EXPIRY))
 			lobby.games[index].used = 0;
+		if (lobby.games[index].used && lobby.games[index].master &&
+			elapsed(lobby.games[index].master_time, GAME_EXPIRY))
+		{
+			lobby.games[index].master = 0;
+			lobby.games[index].master_dedicated = 0;
+			lobby.games[index].listing.dedicated = 0;
+		}
 		if (lobby.newer[index].used && elapsed(lobby.newer[index].heard_time, GAME_EXPIRY))
 			lobby.newer[index].used = 0;
 	}
@@ -918,6 +935,46 @@ void p2p_set_game_listing(const char *name, const char *map, const char *gametyp
 	pthread_mutex_unlock(&p2p_lock);
 }
 
+int p2p_lobby_take_master_listing(const unsigned char *payload, int size, int dedicated)
+{
+	struct listing listing;
+	struct queued queued;
+	struct game *game;
+	int signed_listing;
+
+	if (!payload || size < MINIMUM_LISTING_SIZE || size > MAXIMUM_LISTING_SIZE || !listing_read(payload, size, &listing) ||
+		(listing.flags & _listing_closed) || !signing_key_hash(listing.key, queued.key_hash))
+	{
+		return 0;
+	}
+	signed_listing = listing_opence(payload, &listing) || listing_signed(payload, &listing);
+	if (!signed_listing)
+		return 0;
+	memcpy(queued.payload, payload, (size_t)size);
+	queued.size = size;
+	queued.retained = 0;
+	pthread_mutex_lock(&p2p_lock);
+	if (!lobby.browsing)
+	{
+		pthread_mutex_unlock(&p2p_lock);
+		return 0;
+	}
+	game = find_game(queued.key_hash);
+	if (!(game && game->payload_size == size && !memcmp(game->payload, payload, (size_t)size)))
+		listing_take(&queued, &listing);
+	game = find_game(queued.key_hash);
+	if (game)
+	{
+		game->heard_time = p2p_now();
+		game->master = 1;
+		game->master_dedicated = dedicated ? 1 : 0;
+		game->master_time = p2p_now() ? p2p_now() : 1;
+		game->listing.dedicated = (unsigned char)game->master_dedicated;
+	}
+	pthread_mutex_unlock(&p2p_lock);
+	return game != NULL;
+}
+
 void p2p_lobby_browse(int on)
 {
 	pthread_mutex_lock(&p2p_lock);
@@ -935,6 +992,8 @@ void p2p_lobby_browse(int on)
 		p2p_signal_lobby_topics(lobby.listed, on);
 	}
 	pthread_mutex_unlock(&p2p_lock);
+	/* (the master servers' lists too, while the browser is open) */
+	master_list_browse(on);
 }
 
 void p2p_lobby_refresh(void)
@@ -951,6 +1010,7 @@ void p2p_lobby_refresh(void)
 			lobby.games[index].probed_time = 0;
 	}
 	pthread_mutex_unlock(&p2p_lock);
+	master_list_refresh();
 }
 
 int p2p_lobby_browsing(void)
@@ -964,6 +1024,8 @@ static int listing_order(const void *first, const void *second)
 {
 	const struct p2p_listing *a = first, *b = second;
 
+	if (a->dedicated != b->dedicated)
+		return (int)b->dedicated - (int)a->dedicated;
 	if (a->version != b->version)
 		return (int)b->version - (int)a->version;
 	if (a->player_count != b->player_count)

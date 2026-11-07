@@ -156,6 +156,8 @@ struct p2p_listing
 	unsigned char sealed_token[P2P_LISTING_SEALED_TOKEN_SIZE];
 	/* the host's network version. the browser shows the newest first */
 	unsigned short version;
+	/* a dedicated server, from a master server's list */
+	unsigned char dedicated;
 };
 /* joins a public game the server browser found (p2p_join_invite with its
 invite), remembering its host: nonzero if it held an invite */

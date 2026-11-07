@@ -470,9 +470,10 @@ display. Firing, animation, sound and world lights continue.
 | `network.map_share_upload` | `1024` | `HALO_NET_MAP_SHARE_UPLOAD` | When you host: the most kilobytes per second that the game sends of maps (`16` to `20480`, 20 MB/s). UPLOAD LIMIT in Server Setup > Map Sharing writes its choice here. |
 | `network.map_seed` | `true` | `HALO_NET_MAP_SEED` | When you play in the game of another machine: help send its map to players who join without it. HELP SEND MAPS in Settings > Network Setup > Map Sharing. |
 | `network.map_seed_upload` | `256` | `HALO_NET_MAP_SEED_UPLOAD` | When you play in the game of another machine: the most kilobytes per second that the game sends of maps to other players (`16` to `10240`, 10 MB/s). UPLOAD LIMIT in Settings > Network Setup > Map Sharing. |
-| `network.map_download` | `true` | `HALO_NET_MAP_DOWNLOAD` | When you join a game on a Custom Edition map that you do not have: download it from the players of the game. `false`: leave the game and show which map is missing. DOWNLOAD MAPS in Settings > Network Setup > Map Sharing. |
+| `network.map_download` | `true` | `HALO_NET_MAP_DOWNLOAD` | When you join a game on a Custom Edition map that you do not have, the game asks the host for it. The host sends it when SHARE MAPS is on. A saved false does not stop the ask. |
 | `network.coop_public` | `false` | `HALO_NET_COOP_PUBLIC` | `true`: an online co-op game (Create Game > Internet, a SINGLEPLAYER map) starts as PUBLIC. `false`: it starts as PRIVATE. LISTING in co-op's Server Setup writes its choice here. Refer to "Server browser". |
 | `network.brokers_file` | `"brokers.txt"` | `HALO_NET_BROKERS_FILE` | The file of the public MQTT brokers that let the machines of an invite find each other, and that carry the listings of the server browser: next to `config.toml`, unless a full path. One `host:port` on each line, up to 4; `#` starts a comment. |
+| `network.masters_file` | `"masters.txt"` | `HALO_NET_MASTERS_FILE` | The master servers the server browser asks for dedicated servers, next to `config.toml` unless a full path. One `https://` address and its `ed25519:` key on each line, up to 4. A file that names none leaves the official master. |
 | `network.stun_servers` | Google and Cloudflare | `HALO_NET_STUN` | The public STUN servers (`host:port`, with commas between them) that give the internet address of a machine. |
 | `discord.application_id` | the application of the project | `HALO_DISCORD_APPLICATION` | The Discord application for invites. Empty: no Discord. |
 | `update.auto` | `true` | `HALO_UPDATE_AUTO` | `true`: at start-up, the game looks for a new version. Refer to "Updates". `false`: the game does not look. |
@@ -928,6 +929,14 @@ with the invite can ask the host to connect, and the host then sends its
 addresses. Thus anyone can learn the address of the host of a public game,
 as for any public server.
 
+A dedicated server is listed by OpenCE's master servers, not on those
+brokers. While the server browser is open it asks the official master
+(`https://master.opencommunityedition.com`, or the masters in `masters.txt`
+next to `config.toml`: `network.masters_file`) and shows each dedicated
+server there, with the dedicated mark. Joining one uses the invite in that
+listing, the same way as a game heard on the brokers. The list is kept only
+when the master's pinned key signed it.
+
 The brokers are in `brokers.txt` next to the executable (from
 `port/assets/network/brokers.txt`; on Android, the app writes it next to
 `config.toml` at each start), one `host:port` on each line. The game uses
@@ -963,8 +972,8 @@ asked again. To keep the upload free for the game, the host sends at most
 `network.map_share_upload` (1024 KB/s: UPLOAD LIMIT in Server Setup > Map
 Sharing) and each other player at most `network.map_seed_upload` (256 KB/s:
 UPLOAD LIMIT in Settings > Network Setup > Map Sharing). Set these lower on
-a slow connection. DOWNLOAD MAPS there (`network.map_download`) turns
-downloading off: you then leave a game whose map you do not have.
+a slow connection. A client that does not have the map asks the host for
+it. The host sends it when SHARE MAPS is on.
 
 Maps keep their names. A game is on a map by its name (`hugeass`), and says
 which version of it by the start of the map's hash, so a game always loads
