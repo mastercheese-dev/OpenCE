@@ -1,4 +1,4 @@
-# OpenCE: Halo: Combat Evolved for Linux, Windows, and macOS
+# OpenCE: Halo: Combat Evolved for Mac, Windows, and Linux
 
 <p align="center">
   <a href="https://discord.gg/VnYXYbx54G"><img src="https://img.shields.io/badge/Discord-join-5865F2?style=for-the-badge&logo=discord&logoColor=white" alt="Discord"></a>
@@ -16,7 +16,7 @@
   <img src="docs/images/main-menu.png" alt="Original Halo main menu running on Apple Silicon" width="512">
 </p>
 
-**OpenCE** is Halo: Combat Evolved for Linux, Windows, and macOS. It follows [OpenCE](https://github.com/OpenCommunityEdition/OpenCE), which continues the decompilation of Xbox development build 2342, from [bnunu/halo-1](https://github.com/bnunu/halo-1), itself a fork of [punpckhdq/halo](https://github.com/punpckhdq/halo). Windows, Linux, and Apple Silicon each run the game's own code, with a new layer in place of the Xbox hardware. Windows and Linux draw with OpenGL. The Mac build draws with Metal. Sound, input, and gamepads go through SDL3.
+**OpenCE** is Halo: Combat Evolved for Mac, Windows, and Linux. It follows [OpenCE](https://github.com/OpenCommunityEdition/OpenCE), which continues the decompilation of Xbox development build 2342, from [bnunu/halo-1](https://github.com/bnunu/halo-1), itself a fork of [punpckhdq/halo](https://github.com/punpckhdq/halo). Mac, Windows, and Linux each run the game's own code, with a new layer in place of the Xbox hardware. Windows and Linux draw with OpenGL. The Mac build draws with Metal. Sound, input, and gamepads go through SDL3.
 
 You can play with up to 128 players, run campaign co-op online, load Custom Edition maps, change the field of view, browse servers, host peer-to-peer, download missing maps, and use voice chat. With Smooth Motion on, the game draws a frame for every refresh of the display. The simulation stays at 30 ticks a second, as on the Xbox.
 
@@ -63,15 +63,15 @@ Settings live in `config.toml` next to `halo`. Saves go in `~/.local/share/halo-
 
 On Mac, the app checks this releases page for a newer disk image and asks before installing it.
 
-On Linux and Windows, download a newer zip from the same page and replace the program files. Leave maps, saves, and `config.toml` where they are. If the game offers an update, **Yes** replaces the program files and keeps the previous copies with a `.old` name until the next start. **No** asks again next time. **Do not ask again** writes that choice into `config.toml`. A build you compile yourself has no build number and does not ask.
+On Windows and Linux, download a newer zip from the same page and replace the program files. Leave maps, saves, and `config.toml` where they are. If the game offers an update, **Yes** replaces the program files and keeps the previous copies with a `.old` name until the next start. **No** asks again next time. **Do not ask again** writes that choice into `config.toml`. A build you compile yourself has no build number and does not ask.
 
 ## Your own copy
 
 Bring your own copy of the game. The download has no game data.
 
 1. Start the game (`OpenCE.app` on Mac, `halo.exe` on Windows, `halo` on Linux).
-2. The first time, choose your copy in the file picker. On Linux and Windows, a `maps` folder already sitting next to the program is used and the picker stays closed.
-3. On Linux and Windows, No on that question stops the game. Put a `maps` folder next to the program, or set `paths.data` in `config.toml`, and start again.
+2. The first time, choose your copy in the file picker. On Windows and Linux, a `maps` folder already sitting next to the program is used and the picker stays closed.
+3. On Windows and Linux, No on that question stops the game. Put a `maps` folder next to the program, or set `paths.data` in `config.toml`, and start again.
 4. On Mac, a folder of the game offers **Copy and Manage**, **Use This Folder**, or **Cancel**. Managed copies go under `~/Library/Application Support/OpenCE/Game Data/`. Saves, profiles, and `config.toml` stay in that Application Support directory, the same folder OpenCE uses.
 5. The game sets up `maps` from your copy, then starts.
 
@@ -79,12 +79,12 @@ On Mac, saves and caches stay in `~/Library/Application Support/OpenCE/`. When t
 
 Put the Xbox maps in `maps`. Put Custom Edition maps in `custom_maps`, beside `maps`. If `maps` contains Halo PC maps, the game explains that and stops.
 
-On Linux and Windows, `maps` sits next to the executable. You can also set `paths.data` in `config.toml` to a folder you already have. On Mac, the first launch offers the same choice: copy the game into Application Support, or use a folder you already have.
+On Windows and Linux, `maps` sits next to the executable. You can also set `paths.data` in `config.toml` to a folder you already have. On Mac, the first launch offers the same choice: copy the game into Application Support, or use a folder you already have.
 
 ## Multiplayer
 
 - **Up to 128 players** on up to 128 machines, and up to 4 players on one device in split screen.
-- **Windows, Linux, and Mac play together.** On a local network they can play LAN.
+- **Mac, Windows, and Linux play together.** On a local network they can play LAN.
 - **Peer-to-peer internet hosting.** Join through the server browser or an invite link. A host lists a game as public, or keeps it private for players with the invite. With Discord, the host can send the invite through Discord.
 - **Online co-op campaign,** with friendly fire, player collisions, and more enemies as the player count grows.
 - **Voice chat:** push to talk (V) or an open microphone, changed in the audio settings.
@@ -154,7 +154,7 @@ You do not need the Xbox SDK. The port supplies the declarations the game uses. 
 
 ### Build options
 
-`python configure.py --release` builds a release, which keeps going past assertions. A debug build stops at the first failed check and writes it to the log. `--portable` makes a Linux or Windows build that starts on other x86-64 machines. Without it, those builds use the instructions of the machine that compiled them.
+`python configure.py --release` builds a release, which keeps going past assertions. A debug build stops at the first failed check and writes it to the log. `--portable` makes a Windows or Linux build that starts on other x86-64 machines. Without it, those builds use the instructions of the machine that compiled them.
 
 The experimental [iPhone port](port/ios/README.md) is a developer build. These releases have no iPhone package.
 
